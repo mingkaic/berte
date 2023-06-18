@@ -1,0 +1,23 @@
+tokenizer_model: "export/berte_tokenizer.model"
+training_args:
+    buffer_size: 20000
+    batch_size: 32
+    mask_rate: 0.15
+    context_rate: 0.15
+model_args:
+    model_dim: 256
+    latent_dim: 256
+    num_heads: 8
+    max_pe: 1000
+    dff: 512
+    dropout_rate: 0.4
+    num_isolation_layers: 2
+    num_perm_layers: 4
+    num_latent_layers: 2
+training_settings:
+    epochs_per_test: 1
+    epochs_per_save: 1
+    shards_per_save: 1
+    skip_bad_loss:
+        stdev_coeff: 2
+        warmup: 5000

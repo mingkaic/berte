@@ -1,0 +1,6 @@
+numpy==1.23.1
+tensorflow==2.9.1
+tensorflow_text==2.9.0
+sentencepiece==0.1.96
+cloudwatch==1.0.5
+boto3==1.26.155

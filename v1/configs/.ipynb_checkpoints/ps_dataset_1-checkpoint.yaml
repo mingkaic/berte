@@ -1,0 +1,5 @@
+dataset: "export/persentence_dataset"
+shard_directory: "export/persentence_ds_shard/"
+tokenizer_args:
+    add_bos: True
+    add_eos: True
