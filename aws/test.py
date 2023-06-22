@@ -21,6 +21,8 @@ import common.training as training
 from cloudwatch import cloudwatch
 import boto3
 
+from aws_common.instance import get_instance
+
 # --------- AWS Parameters ---------
 _instance_info = get_instance()
 INSTANCE_ID = _instance_info['instance_id']
@@ -29,7 +31,7 @@ EC2_REGION = _instance_info['ec2_region']
 S3_BUCKET = 'bidi-enc-rep-trnsformers-everywhere'
 S3_DIR = 'v1/pretraining'
 CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
-ID = '4_persentence_pretrain_mlm_15p'
+ID = 'test'
 
 s3_client = boto3.client('s3')
 s3_configs_key = os.path.join(S3_DIR, ID, 's3_configs.tar.gz')
@@ -89,6 +91,9 @@ training_shards, _ = dataset.setup_shards(dataset_shard_dirpath, training_args,
 learning_rate = training.CustomSchedule(model_args["model_dim"])
 optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
+for training_key in training_shards:
+    training_shards[training_key] = training_shards[training_key].take(1)
+
 _builder = model.InitParamBuilder()
 for param in cached_args:
     _builder.add_param(cached_args[param], param)
@@ -135,7 +140,7 @@ def save_out():
 
 ckpt = tf.train.Checkpoint(pretrainer=pretrainer, optimizer=optimizer)
 ckpt_manager = tf.train.CheckpointManager(ckpt,
-                                          directory="out/checkpoints/train_15p_ps",
+                                          directory="out/checkpoints/test",
                                           max_to_keep=50)
 
 # if a checkpoint exists, restore the latest checkpoint.
@@ -189,7 +194,7 @@ def run_epochs(epochs, skip_shards=None):
 # --------- Training ---------
 run_epochs(1)
 
-save_name = 'out/berte_pretrain_mlm_15p'
+save_name = 'out/test'
 tf.saved_model.save(pretrainer, save_name)
 save_out()
 

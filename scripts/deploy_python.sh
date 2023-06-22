@@ -12,20 +12,24 @@ mkdir -p "$TARGET";
 mkdir -p "$EC2_DEPLOY_DIR";
 
 # deploying zips
+
+## AWS scripts
+cp -r "$BASE/aws_common" "$EC2_DEPLOY_DIR/aws_common";
+cp "$BASE/aws/test.py" "$EC2_DEPLOY_DIR";
+cp "$BASE/aws/gpumon.py" "$EC2_DEPLOY_DIR";
+cp "$BASE/aws_requirements.txt" "$EC2_DEPLOY_DIR";
+
+## training scripts
 cp -r "$BASE/common" "$EC2_DEPLOY_DIR/common";
 cp "$BASE/requirements.txt" "$EC2_DEPLOY_DIR";
 ls -1 $SOURCE_CODE/*.py | awk 'BEGIN { FS = "/" } ; {print $2}' |
 	xargs -L1 -I{} cp "$SOURCE_CODE/{}" "$EC2_DEPLOY_DIR/{}";
+
+## zip then upload to S3
+pushd $BASE;
 tar -cvzf "$TARGET/ec2_deployment.tar.gz" workspace;
-
-pushd $SOURCE_CODE;
-tar -cvzf "$TARGET/s3_configs.tar.gz" configs;
-tar -cvzf "$TARGET/s3_export.tar.gz" "export";
-popd;
-
 aws s3 cp "$TARGET/ec2_deployment.tar.gz" "$S3_DIR/ec2_deployment.tar.gz";
-aws s3 cp "$TARGET/s3_configs.tar.gz" "$S3_DIR/s3_configs.tar.gz";
-aws s3 cp "$TARGET/s3_export.tar.gz" "$S3_DIR/s3_export.tar.gz";
+popd;
 
 # clean up
 rm -rf "$EC2_DEPLOY_DIR";
