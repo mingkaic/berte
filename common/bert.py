@@ -306,19 +306,16 @@ class _swiGLU(tf.keras.layers.Layer):
     """
     def __init__(self, in_size, beta=1.0, use_bias=True):
         super().__init__()
-        self.dense = tf.keras.layers.Dense(in_size * 2, use_bias=use_bias)
-        self.in_size = in_size
+        self.sw_dense = tf.keras.layers.Dense(in_size, use_bias=use_bias)
+        self.dense = tf.keras.layers.Dense(in_size, use_bias=use_bias)
         self.beta = beta
 
     def call(self, inputs, *args, **kwargs):
         """
         Layer call implementation
         """
-        tmp = self.dense(inputs)
-        shape = inputs.shape
-        rank = len(shape)
-        unsilued = tf.slice(tmp, [0] * rank, shape)
-        silued = tf.slice(tmp, [0] * (rank - 1) + [self.in_size], shape)
+        unsilued = self.dense(inputs)
+        silued = self.sw_dense(inputs)
         return unsilued * tf.nn.silu(silued, beta=self.beta)
 
 class _perceiverLayer(tf.keras.layers.Layer):
@@ -338,7 +335,8 @@ class _perceiverLayer(tf.keras.layers.Layer):
         self.ffn = tf.keras.Sequential([
             tf.keras.layers.Dense(dff, use_bias=use_bias), # shape == (batch_size, ?, dff)
             _swiGLU(dff, use_bias=use_bias),
-            tf.keras.layers.Dense(model_dim, use_bias=use_bias) # shape == (batch_size, ?, model_dim)
+            tf.keras.layers.Dense(model_dim, use_bias=use_bias)
+            # shape == (batch_size, ?, model_dim)
         ])
 
         self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)

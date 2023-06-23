@@ -35,7 +35,7 @@ def build_tester(action_module, samples, mask_sizes, logger):
     """ build_tester returns a callable that tests the samples """
     n_extras = mask_sizes[0]-len(samples)
     sentences = tf.constant(samples + [""]*n_extras)
-    tokens = action_module.tokenizer.tokenize(sentences).to_tensor()
+    tokens = action_module.tokenize(sentences)
     lengths = np.array([len(token) for token in tokens.numpy()])
     _, masked_tokens, masked = mask_lm(tokens, lengths, 0.1,
             mask_sizes=mask_sizes,
@@ -81,10 +81,7 @@ def build_pretrainer(action_module, optimizer, batch_shape):
             _, lat = action_module.latent_prediction(orig, training=True)
             prediction = action_module.mask_prediction(source, latent_pred=lat, training=True)
             loss = training.loss_function(target, prediction, pad=action_module.metadata["PAD"])
-            trainable_vars = action_module.preprocessor.trainable_variables+\
-                             action_module.perceiver.trainable_variables+\
-                             action_module.latenter.trainable_variables+\
-                             action_module.mask_predictor.trainable_variables
+            trainable_vars = action_module.contexted_trainable_variables()
 
         if tf.math.is_nan(loss):
             return loss, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
@@ -107,9 +104,7 @@ def build_pretrainer(action_module, optimizer, batch_shape):
         with tf.GradientTape() as tape:
             prediction = action_module.mask_prediction(source, training=True)
             loss = training.loss_function(target, prediction, pad=action_module.metadata["PAD"])
-            trainable_vars = action_module.preprocessor.trainable_variables+\
-                             action_module.perceiver.trainable_variables+\
-                             action_module.mask_predictor.trainable_variables
+            trainable_vars = action_module.uncontexted_trainable_variables()
 
         if tf.math.is_nan(loss):
             return loss, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues

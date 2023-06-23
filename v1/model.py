@@ -217,7 +217,7 @@ class PretrainerMLM(tf.Module):
     """
     Collection of models used in pretrainining using Masked Language Modeling.
     """
-    def __init__(self, tokenizer, metadata, params, args=None):
+    def __init__(self, tokenizer, params, metadata, args=None):
         super().__init__()
 
         self.tokenizer = tokenizer
@@ -239,8 +239,13 @@ class PretrainerMLM(tf.Module):
             self.mask_predictor = Predictor(params["vocab_size"],
                                             params["dataset_width"])
 
-        self.metadata = metadata
+        # for persistence
         self.params = params
+        self.metadata = metadata
+
+    def tokenize(self, sentence):
+        """ use pretrainer tokenizer """
+        return self.tokenizer.tokenize(sentence).to_tensor()
 
     def latent_prediction(self, tokens, training=False):
         """ deduce the encoding and latent starting with random latent parameter """
@@ -254,7 +259,7 @@ class PretrainerMLM(tf.Module):
             training=training)
         latent_pred, _ = self.latenter(
             bert.encoder_call_param(enc, training=training), training=training)
-        return enc, latent_pred
+        return (enc, latent_pred)
 
     def mask_prediction(self, tokens, latent_pred=None, training=False):
         """ deduce the tokens replaced by <mask> """
@@ -268,8 +273,13 @@ class PretrainerMLM(tf.Module):
                 perceiver_call_param(enc, latent, training=training), training=training)
         return self.mask_predictor(enc)
 
-    def _restore_from_tensors(self, restored_tensors):
-        pass
+    def contexted_trainable_variables(self):
+        """ return trainable variables with modules used to extract context """
+        return self.uncontexted_trainable_variables()+\
+             self.latenter.trainable_variables
 
-    def _serialize_to_tensors(self):
-        return None
+    def uncontexted_trainable_variables(self):
+        """ return trainable variables for mask prediction """
+        return self.preprocessor.trainable_variables+\
+             self.perceiver.trainable_variables+\
+             self.mask_predictor.trainable_variables

@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""
+This tests 4_persentence_pretrain_mlm_15p.ipynb in an AWS instance
+"""
+# standard packages
+import logging
+import os.path
+
+# aws packages
+import boto3
+
+# business logic
+from ps_pretrain_mlm_15p import main
+
+# local packages
+import aws_common.init as init
+from aws_common.instance import get_instance
+
+def shorten_shards(training_shards):
+    """ take 1 from each shard and take the first 3 shads """
+    result = dict()
+    for training_key in list(training_shards.keys())[:2]:
+        result[training_key] = training_shards[training_key].take(1)
+    return result
+
+if __name__ == '__main__':
+    _instance_info = get_instance()
+    INSTANCE_ID = _instance_info['instance_id']
+    EC2_REGION = _instance_info['ec2_region']
+
+    S3_BUCKET = 'bidi-enc-rep-trnsformers-everywhere'
+    S3_DIR = 'v1/pretraining'
+    CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
+    ID = 'test'
+    OUTDIR = 'test_out'
+
+    syncer = init.S3BucketSyncer(S3_BUCKET)
+    syncer.download_if_notfound('configs',
+            os.path.join(S3_DIR, ID, 's3_configs.tar.gz'))
+    syncer.download_if_notfound('export',
+            os.path.join(S3_DIR, ID, 's3_export.tar.gz'))
+
+    logger = init.create_logger(ID, CLOUDWATCH_GROUP, EC2_REGION)
+
+    logger.setLevel(logging.INFO)
+    try:
+        os.makedirs(OUTDIR)
+    except FileExistsError:
+        pass
+
+    main(logger, OUTDIR,
+            ckpt_id='test',
+            model_id='test',
+            training_preprocessing=shorten_shards,
+            context_rate_overwrite=2.0)
+    syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
+    boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])
