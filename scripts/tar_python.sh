@@ -14,8 +14,7 @@ mkdir -p "$TMP_DIR";
 # move AWS scripts
 cp -r "$BASE/aws_common" "$TMP_DIR/aws_common";
 cp "$BASE/aws_requirements.txt" "$TMP_DIR";
-ls -1 $BASE/aws/*.py | awk 'BEGIN { FS = "/" } ; {print $2}' |
-	xargs -L1 -I{} cp "$SOURCE_CODE/{}" "$TMP_DIR/{}";
+cp "$BASE/aws/gpumon.py" "$TMP_DIR";
 
 # move training scripts
 cp -r "$BASE/common" "$TMP_DIR/common";

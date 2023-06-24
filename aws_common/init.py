@@ -20,11 +20,15 @@ class S3BucketSyncer:
         """ download an asset from s3 if not exist """
         if not os.path.exists(dirpath):
             resp = self.client.get_object(Bucket=self.bucket, Key=key)
-            with tempfile.TemporaryFile(mode='wb') as tempf:
-                tempf.write(resp['Body'].read())
-                res_tar = tarfile.open(tempf.name)
-                res_tar.extractall()
-                res_tar.close()
+            tempf = tempfile.NamedTemporaryFile(mode='wb', delete=False)
+            tempf.write(resp['Body'].read())
+            tempf.close()
+
+            res_tar = tarfile.open(tempf.name)
+            res_tar.extractall()
+            res_tar.close()
+
+            os.unlink(tempf.name)
 
     def tar_then_upload(self, dirpath, parent_key, name):
         """ tars dirpath then write to s3 """

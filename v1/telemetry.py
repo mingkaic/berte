@@ -24,7 +24,7 @@ class PrefixAdapter(logging.LoggerAdapter):
 def tokens_reporter(logger, tokenizer):
     """ Return reporting function that detokenize tokens and error to sentences """
     def _reporter(tokens):
-        if isinstance(tokens, tf.Tensor):
+        if not isinstance(tokens, tf.Tensor):
             return
 
         sentences = tokenizer.detokenizer(tokens).numpy()

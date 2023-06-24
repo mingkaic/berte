@@ -139,8 +139,8 @@ def main():
                     prog='gpumon',
                     description='write gpu metrics to cloudwatch')
     parser.add_argument('--namespace', dest='namespace')
-    parser.add_argument('--sleep_interval', dest='sinterval', default=10)
-    parser.add_argument('--store_reso', dest='store_reso', default=60)
+    parser.add_argument('--sleep_interval', dest='sinterval', default=10, type=int)
+    parser.add_argument('--store_reso', dest='store_reso', default=60, type=int)
 
     args = parser.parse_args()
 
