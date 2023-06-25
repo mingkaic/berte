@@ -39,7 +39,7 @@ class S3BucketSyncer:
 def create_logger(log_id, group, region):
     """ return cloudwatch logger """
     logger = logging.getLogger(log_id)
-    formatter = logging.Formatter('%(asctime)s : %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(levelname)s - %(message)s')
     handler = cloudwatch.CloudwatchHandler(log_group=group, region=region)
     handler.setFormatter(formatter)
     logger.addHandler(handler)

@@ -21,13 +21,13 @@ class PrefixAdapter(logging.LoggerAdapter):
         """ overwriting logger adapter """
         return "[{}] {}".format(self.extra, msg), kwargs
 
-def tokens_reporter(logger, tokenizer):
+def detail_reporter(logger, tokenizer):
     """ Return reporting function that detokenize tokens and error to sentences """
-    def _reporter(tokens):
-        if not isinstance(tokens, tf.Tensor):
-            return
-
-        sentences = tokenizer.detokenizer(tokens).numpy()
-        for sentence in sentences:
-            logger.error(sentence)
+    def _reporter(tokens, debug_info):
+        if isinstance(tokens, tf.Tensor):
+            sentences = tokenizer.detokenizer(tokens).numpy()
+            logger.error('sentences:{}'.format(','.join([
+                '"' + sentence + '"' for sentence in sentences])))
+        for debug_key in debug_info:
+            logger.error('{}:{}'.format(debug_key, debug_info[debug_key].numpy()))
     return _reporter

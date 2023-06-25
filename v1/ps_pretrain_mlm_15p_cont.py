@@ -10,7 +10,6 @@ import os.path
 import yaml
 
 # installed packages
-import tensorflow_text as text
 import tensorflow as tf
 
 # local packages
@@ -26,18 +25,18 @@ QUOTA_BUCKET_RECOVER = 10
 QUOTA_BUCKET_RECOVER_RATE = 50
 SKIP_LOSS_WINDOW = 200
 
-def main(logger, outdir,
+def main(logger, in_model_dir, outdir,
         nepochs=1,
-        ckpt_id='train_15p_ps',
-        model_id='berte_pretrain_mlm_15p',
+        ckpt_id='train_15p_ps_cont',
+        model_id='berte_pretrain_mlm_15p_cont',
         training_preprocessing=None,
         context_rate_overwrite=None):
     """ actually pretrains some model """
 
     # --------- Extract configs and cached values ---------
+    pretrainer = tf.saved_model.load(in_model_dir)
     with open("configs/pretrain_1.yaml") as file:
         _args = yaml.safe_load(file.read())
-        tokenizer_filename = _args["tokenizer_model"]
         training_args = _args["training_args"]
         model_args = _args["model_args"]
         training_settings = _args["training_settings"]
@@ -45,37 +44,20 @@ def main(logger, outdir,
         _args = yaml.safe_load(file.read())
         dataset_path = _args["dataset"]
         dataset_shard_dirpath = _args["shard_directory"]
-        tokenizer_setup = _args["tokenizer_args"]
-    with open(tokenizer_filename, 'rb') as file:
-        tokenizer = text.SentencepieceTokenizer(model=file.read(),
-                                                out_type=tf.int32,
-                                                add_bos=tokenizer_setup["add_bos"],
-                                                add_eos=tokenizer_setup["add_eos"])
+
     # generate or retrieve cached values
     cached_args = dataset.cache_values("configs/pretrain_cache.yaml", {
         "dataset_width": dataset.generate_dataset_width,
-        "vocab_size": lambda _, tokenizer: int(tokenizer.vocab_size().numpy()),
-    }, dataset_path, tokenizer)
+    }, dataset_path, pretrainer.tokenizer)
 
     # --------- Setup Dataset and Model ---------
     training_shards, _ = dataset.setup_shards(dataset_shard_dirpath, training_args,
-                                                          tokenizer, logger=logger)
+                                                          pretrainer.tokenizer, logger=logger)
     if training_preprocessing is not None:
         training_shards = training_preprocessing(training_shards)
     learning_rate = training.CustomSchedule(model_args["model_dim"])
     optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
-    _builder = model.InitParamBuilder()
-    for param in cached_args:
-        _builder.add_param(cached_args[param], param)
-    for param in model_args:
-        _builder.add_param(model_args[param], param)
-    pretrainer = model.PretrainerMLM(
-            tokenizer=tokenizer,
-            params=_builder.build(),
-            metadata=model.PretrainerMLMMetadataBuilder().
-                tokenizer_meta(tokenizer_filename).
-                optimizer_iter(optimizer.iterations).build())
     _batch_shape = (training_args["batch_size"], cached_args["dataset_width"])
     run_test = traintest.build_tester(pretrainer,
             samples=[
@@ -106,12 +88,12 @@ def main(logger, outdir,
         ckpt.restore(ckpt_manager.latest_checkpoint)
         logger.info('Latest checkpoint restored!!')
 
-    bucket = training.QuotaBucket(training_settings["skip_bad_loss"]["warmup"],
+    bucket = training.QuotaBucket(0,
                                   bucket_capacity=QUOTA_BUCKET_CAPACITY,
                                   bucket_recover=QUOTA_BUCKET_RECOVER,
                                   bucket_recover_rate=QUOTA_BUCKET_RECOVER_RATE)
     prev_losses = training.LossWindow(capacity=SKIP_LOSS_WINDOW)
-    nan_reporter = telemetry.detail_reporter(logger, tokenizer)
+    nan_reporter = telemetry.detail_reporter(logger, pretrainer.tokenizer)
     if context_rate_overwrite is not None:
         context_rate = context_rate_overwrite
     else:
@@ -153,9 +135,9 @@ def main(logger, outdir,
 
 if __name__ == '__main__':
     # local logging
-    logging.basicConfig(filename="tmp/4_persentence_pretrain_mlm_15p.log",
+    logging.basicConfig(filename="tmp/5_persentence_pretrain_mlm_15p.log",
                         format='%(asctime)s %(message)s',
                         filemode='w')
     _logger = logging.getLogger()
     _logger.setLevel(logging.INFO)
-    main(_logger, 'export')
+    main(_logger, 'export/berte_pretrain_mlm_15p', 'export')

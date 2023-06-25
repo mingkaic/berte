@@ -254,12 +254,18 @@ class PretrainerMLM(tf.Module):
         enc, latent, _ = self.preprocessor(
             preprocessor_call_param(tokens, training=training),
             training=training)
-        enc, _ = self.perceiver(
+        enc2, _ = self.perceiver(
             perceiver_call_param(enc, latent, training=training),
             training=training)
         latent_pred, _ = self.latenter(
-            bert.encoder_call_param(enc, training=training), training=training)
-        return (enc, latent_pred)
+            bert.encoder_call_param(enc2, training=training), training=training)
+        debug_info = {
+            'latent_prediction.preprocessor_enc': enc,
+            'latent_prediction.preprocessor_latent': latent,
+            'latent_prediction.perceiver_enc': enc2,
+            'latent_prediction.predicted_latent': latent_pred,
+        }
+        return (enc, latent_pred, debug_info)
 
     def mask_prediction(self, tokens, latent_pred=None, training=False):
         """ deduce the tokens replaced by <mask> """
@@ -269,9 +275,16 @@ class PretrainerMLM(tf.Module):
                 preprocessor_call_param(tokens, training=training), training=training)
         if latent_pred is not None:
             latent = latent_pred
-        enc, _ = self.perceiver(
+        enc2, _ = self.perceiver(
                 perceiver_call_param(enc, latent, training=training), training=training)
-        return self.mask_predictor(enc)
+        pred = self.mask_predictor(enc2)
+        debug_info = {
+            'mask_prediction.preprocessor_enc': enc,
+            'mask_prediction.preprocessor_latent': latent,
+            'mask_prediction.perceiver_enc': enc2,
+            'mask_prediction.prediction': pred,
+        }
+        return (pred, debug_info)
 
     def contexted_trainable_variables(self):
         """ return trainable variables with modules used to extract context """

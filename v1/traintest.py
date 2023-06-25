@@ -16,13 +16,13 @@ def mask_lm(tokens, lengths, mask_rate, mask_sizes, pad):
     """ given padded tokens, return mask_rate portion of tokens """
     if isinstance(lengths, tf.Tensor):
         lengths = lengths.numpy()
-    lengths -= 2
+    lengths -= 2 # exclude bos and eos
 
     num_masked = np.maximum(1, mask_rate * lengths).astype(int)
     npmask = np.zeros(mask_sizes)
     for i, (length, size) in enumerate(zip(lengths, num_masked)):
         if length > 0:
-            indices = np.random.choice(length, size=size, replace=False) + 1
+            indices = np.random.choice(length, size=size, replace=False) + 1 # after bos
             npmask[i, indices] = 1
 
     tokens = tf.pad(tokens, ([0, 0], [0, mask_sizes[1] - tokens.numpy().shape[1]]),
@@ -78,22 +78,24 @@ def build_pretrainer(action_module, optimizer, batch_shape):
     ])
     def contexted_persentence_mlm_pretrain(orig, source, target, worst_loss):
         with tf.GradientTape() as tape:
-            _, lat = action_module.latent_prediction(orig, training=True)
-            prediction = action_module.mask_prediction(source, latent_pred=lat, training=True)
+            _, lat, debug_info = action_module.latent_prediction(orig, training=True)
+            prediction, debug_info2 = action_module.mask_prediction(source, latent_pred=lat, training=True)
             loss = training.loss_function(target, prediction, pad=action_module.metadata["PAD"])
+            debug_info.update(debug_info2)
+            debug_info['loss'] = loss
             trainable_vars = action_module.contexted_trainable_variables()
 
         if tf.math.is_nan(loss):
-            return loss, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
+            return debug_info, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
 
         if loss > worst_loss: # skip bad batches
-            return loss, UNSTABLE_LOSS_ERR_CODE # return instead of raise, since tf has issues
+            return debug_info, UNSTABLE_LOSS_ERR_CODE # return instead of raise, since tf has issues
 
         gradients = tape.gradient(loss, trainable_vars)
         optimizer.apply_gradients(zip(gradients, trainable_vars))
         train_loss(loss)
         train_accuracy(training.accuracy_function(target, prediction))
-        return loss, 0
+        return debug_info, 0
 
     @tf.function(input_signature=[
         tf.TensorSpec(shape=batch_shape, dtype=tf.int32),
@@ -102,21 +104,22 @@ def build_pretrainer(action_module, optimizer, batch_shape):
     ])
     def uncontexted_persentence_mlm_pretrain(source, target, worst_loss):
         with tf.GradientTape() as tape:
-            prediction = action_module.mask_prediction(source, training=True)
+            prediction, debug_info = action_module.mask_prediction(source, training=True)
             loss = training.loss_function(target, prediction, pad=action_module.metadata["PAD"])
+            debug_info['loss'] = loss
             trainable_vars = action_module.uncontexted_trainable_variables()
 
         if tf.math.is_nan(loss):
-            return loss, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
+            return debug_info, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
 
         if loss > worst_loss: # skip bad batches
-            return loss, UNSTABLE_LOSS_ERR_CODE # return instead of raise, since tf has issues
+            return debug_info, UNSTABLE_LOSS_ERR_CODE # return instead of raise, since tf has issues
 
         gradients = tape.gradient(loss, trainable_vars)
         optimizer.apply_gradients(zip(gradients, trainable_vars))
         train_loss(loss)
         train_accuracy(training.accuracy_function(target, prediction))
-        return loss, 0
+        return debug_info, 0
 
     def pretrainer(batch, lengths, prev_loss, mask_rate, context_rate):
         orig, source, target = mask_lm(batch, lengths, mask_rate,
@@ -202,12 +205,13 @@ class EpochPretrainer:
 
             for (sentence, lengths) in self.training_shards[training_key]:
                 check = self.loss_check()
-                loss, err_code = self.args["training_cb"](sentence, lengths, check)
+                debug_info, err_code = self.args["training_cb"](sentence, lengths, check)
+                loss = debug_info['loss']
                 skipped = False
                 if err_code != 0:
                     if err_code == NAN_LOSS_ERR_CODE:
                         if nan_reporter is not None:
-                            nan_reporter(sentence)
+                            nan_reporter(sentence, debug_info)
                         logger.error('batch %d produced nan loss! skipping...', batch)
                     loss = check
                     skipped = True

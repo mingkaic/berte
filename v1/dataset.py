@@ -27,10 +27,10 @@ def setup_shards(shard_dirpath, training_args, tokenizer, logger=None):
                                                           .prefetch(tf.data.AUTOTUNE))
         except FileNotFoundError as err:
             if logger is not None:
-                logger.info('{} not found: {}'.format(shard, err))
+                logger.error('{} not found: {}'.format(shard, err))
         except ValueError as err:
             if logger is not None:
-                logger.info('{} failed: {}'.format(shard, err))
+                logger.error('{} failed: {}'.format(shard, err))
 
     return training_shards, training_keys
 
