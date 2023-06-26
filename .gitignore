@@ -1,3 +1,16 @@
 **/tmp/**/*
 **/__pycache__
 **/.ipynb_checkpoints
+
+# System Files
+.*
+
+# whitelist
+!.gitignore
+!.circleci
+!.dockerignore
+!.gitmodules
+!.astylerc
+!.bazelrc
+!.bazelignore
+!.pylintrc

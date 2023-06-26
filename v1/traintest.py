@@ -140,7 +140,7 @@ EPOCH_PRETRAINER_ARGS = [
     "training_accuracy",
     "training_shards",
     "training_cb",
-    "ckpt_manager",
+    "ckpt_save_cb",
     "bucket",
     "prev_losses",
 ]
@@ -234,8 +234,6 @@ class EpochPretrainer:
 
                 batch += 1
 
-            if self.args["ckpt_manager"] is not None and (\
-                    (shard + 1) % self.args["training_settings"]["shards_per_save"] == 0):
+            if ((shard + 1) % self.args["training_settings"]["shards_per_save"] == 0):
                 logger.info('Saving checkpoint for shard %d at %s',
-                        shard+1,
-                        self.args["ckpt_manager"].save())
+                        shard+1, self.args["ckpt_save_cb"](None))

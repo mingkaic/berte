@@ -6,11 +6,14 @@ This runs 4_persentence_pretrain_mlm_15p.ipynb in an AWS instance
 import logging
 import os.path
 
+# installed packages
+import tensorflow as tf
+
 # aws packages
 import boto3
 
 # business logic
-from ps_pretrain_mlm_15p_cont import main
+from ps_pretrain_mlm_15p import main
 
 # local packages
 import aws_common.init as init
@@ -41,6 +44,10 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    main(logger, 'configs/berte_pretrain_mlm_15p', OUTDIR)
+    main(logger, OUTDIR,
+            in_model_dir='configs/berte_pretrain_mlm_15p',
+            ckpt_id='train_15p_ps_cont',
+            model_id='berte_pretrain_mlm_15p_cont',
+            saved_options=tf.saved_model.SaveOptions(experimental_io_device='/job:localhost'))
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])

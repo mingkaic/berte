@@ -6,6 +6,9 @@ This tests 4_persentence_pretrain_mlm_15p.ipynb in an AWS instance
 import logging
 import os.path
 
+# installed packages
+import tensorflow as tf
+
 # aws packages
 import boto3
 
@@ -52,6 +55,7 @@ if __name__ == '__main__':
             ckpt_id='test',
             model_id='test',
             training_preprocessing=shorten_shards,
-            context_rate_overwrite=2.0)
+            context_rate_overwrite=2.0,
+            saved_options=tf.saved_model.SaveOptions(experimental_io_device='/job:localhost'))
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])
