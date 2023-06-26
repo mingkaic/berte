@@ -51,11 +51,22 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
+    expected_model = os.path.join(OUTDIR, ID)
+    options = tf.saved_model.SaveOptions(experimental_io_device='/job:localhost')
+    # first "epoch" to generate model
     main(logger, OUTDIR,
-            ckpt_id='test',
-            model_id='test',
+            ckpt_id=ID,
+            model_id=ID,
             training_preprocessing=shorten_shards,
-            context_rate_overwrite=2.0,
-            saved_options=tf.saved_model.SaveOptions(experimental_io_device='/job:localhost'))
+            context_rate_overwrite=1.0, # guarantee context_rate
+            saved_options=options)
+    # second "epoch" to read model
+    main(logger, OUTDIR,
+            in_model_dir=expected_model,
+            ckpt_id=ID,
+            model_id=ID,
+            training_preprocessing=shorten_shards,
+            context_rate_overwrite=1.0, # guarantee context_rate
+            saved_options=options)
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])
