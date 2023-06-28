@@ -27,19 +27,21 @@ QUOTA_BUCKET_RECOVER_RATE = 50
 SKIP_LOSS_WINDOW = 200
 
 def _setup_pretrainer(tokenizer_filename, tokenizer_setup, optimizer,
-        in_model_dir, saved_options, *args):
+        in_model_dir, load_options, *args):
     builder = model.InitParamBuilder()
     for arg in args:
         for key in arg:
             builder.add_param(arg[key], key)
-    if in_model_dir is not None:
-        return tf.saved_model.load(in_model_dir, options=saved_options)
 
     with open(tokenizer_filename, 'rb') as file:
         tokenizer = text.SentencepieceTokenizer(model=file.read(),
                                                 out_type=tf.int32,
                                                 add_bos=tokenizer_setup["add_bos"],
                                                 add_eos=tokenizer_setup["add_eos"])
+    if in_model_dir is not None:
+        return model.PretrainerMLM.from_loaded(tokenizer,
+                tf.saved_model.load(in_model_dir, options=load_options))
+
     return model.PretrainerMLM(
             tokenizer=tokenizer,
             params=builder.build(),
@@ -66,11 +68,17 @@ def main(logger, outdir,
         model_id='berte_pretrain_mlm_15p',
         training_preprocessing=None,
         context_rate_overwrite=None,
-        saved_options=None):
+        ckpt_options=None,
+        save_options=None,
+        load_options=None):
     """ actually pretrains some model """
 
-    if saved_options is None:
-        saved_options = tf.saved_model.SaveOptions()
+    if ckpt_options is None:
+        ckpt_options = tf.train.CheckpointOptions()
+    if save_options is None:
+        save_options = tf.saved_model.SaveOptions()
+    if load_options is None:
+        load_options = tf.saved_model.LoadOptions()
 
     # --------- Extract configs and cached values ---------
     with open("configs/pretrain_1.yaml") as file:
@@ -90,7 +98,7 @@ def main(logger, outdir,
     learning_rate = training.CustomSchedule(model_args["model_dim"])
     optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
     pretrainer = _setup_pretrainer(tokenizer_filename, tokenizer_setup, optimizer,
-            in_model_dir, saved_options, cached_args, model_args)
+            in_model_dir, load_options, cached_args, model_args)
 
     training_shards, _ = dataset.setup_shards(dataset_shard_dirpath, training_args,
                                                           pretrainer.tokenizer, logger=logger)
@@ -147,7 +155,7 @@ def main(logger, outdir,
                 batch, lengths, loss_check,
                 mask_rate=training_args["mask_rate"],
                 context_rate=context_rate)).\
-            ckpt_save_cb(lambda _: ckpt_manager.save(options=saved_options)).\
+            ckpt_save_cb(lambda _: ckpt_manager.save(options=ckpt_options)).\
             bucket(bucket).\
             prev_losses(prev_losses).build())
 
@@ -160,7 +168,7 @@ def main(logger, outdir,
 
             if (epoch + 1) % training_settings["epochs_per_save"] == 0:
                 logger.info('Saving checkpoint for epoch %d at %s',
-                        epoch+1, ckpt_manager.save(options=saved_options))
+                        epoch+1, ckpt_manager.save(options=ckpt_options))
 
             if (epoch + 1) % training_settings["epochs_per_test"] == 0:
                 run_test() # run every epoch
@@ -171,7 +179,7 @@ def main(logger, outdir,
 
     # --------- Training ---------
     run_epochs(nepochs)
-    tf.saved_model.save(pretrainer, os.path.join(outdir, model_id), options=saved_options)
+    tf.saved_model.save(pretrainer, os.path.join(outdir, model_id), options=save_options)
 
 if __name__ == '__main__':
     # local logging

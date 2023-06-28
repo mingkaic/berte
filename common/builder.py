@@ -8,8 +8,11 @@ import functools
 
 class Builder:
     """ build adds args keys as class methods """
-    def __init__(self, args_keys=None):
-        self.args = dict()
+    def __init__(self, args_keys=None, default_values=None):
+        if default_values is not None:
+            self.args = dict(default_values)
+        else:
+            self.args = dict()
 
         if args_keys is not None:
             for key in args_keys:

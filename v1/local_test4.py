@@ -3,6 +3,7 @@
 This tests 4_persentence_pretrain_mlm_15p.ipynb locally
 """
 # standard packages
+import os
 import logging
 
 # business logic
@@ -26,3 +27,11 @@ if __name__ == '__main__':
             model_id='test',
             training_preprocessing=shorten_shards,
             context_rate_overwrite=2.0)
+    main(logger, 'tmp',
+            in_model_dir='tmp/test',
+            ckpt_id='test',
+            model_id='test',
+            training_preprocessing=shorten_shards,
+            context_rate_overwrite=2.0)
+    os.rmdir('tmp/test') # remove model
+    os.rmdir('tmp/checkpoints/test') # remove checkpoints

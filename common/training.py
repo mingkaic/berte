@@ -18,6 +18,7 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         self.warmup_steps = warmup_steps
 
     def __call__(self, step):
+        step = tf.cast(step, tf.float32)
         arg1 = tf.math.rsqrt(step)
         arg2 = step * (self.warmup_steps ** -1.5)
 
@@ -117,7 +118,7 @@ def loss_function(real, pred, pad=0):
     common loss function used when training
     """
 
-    mask = tf.math.logical_not(tf.math.equal(real, pad))
+    mask = tf.math.logical_not(tf.math.equal(real, tf.cast(pad, real.dtype)))
     loss_ = loss_object(real, pred)
 
     mask = tf.cast(mask, loss_.dtype)

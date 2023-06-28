@@ -42,7 +42,7 @@ def build_tester(action_module, samples, mask_sizes, logger):
             pad=action_module.metadata["PAD"])
 
     def tester():
-        prediction = action_module.mask_prediction(masked_tokens, training=False)
+        prediction, _ = action_module.mask_prediction(masked_tokens, training=False)
         for i, sentence in enumerate(samples):
             localmask = masked[i, :]
             maskidx = tf.argmax(localmask)
@@ -80,7 +80,8 @@ def build_pretrainer(action_module, optimizer, batch_shape):
         with tf.GradientTape() as tape:
             _, lat, debug_info = action_module.latent_prediction(orig, training=True)
             prediction, debug_info2 = action_module.mask_prediction(source, latent_pred=lat, training=True)
-            loss = training.loss_function(target, prediction, pad=action_module.metadata["PAD"])
+            loss = training.loss_function(target, prediction,
+                    pad=action_module.metadata["PAD"])
             debug_info.update(debug_info2)
             debug_info['loss'] = loss
             trainable_vars = action_module.contexted_trainable_variables()
@@ -105,7 +106,8 @@ def build_pretrainer(action_module, optimizer, batch_shape):
     def uncontexted_persentence_mlm_pretrain(source, target, worst_loss):
         with tf.GradientTape() as tape:
             prediction, debug_info = action_module.mask_prediction(source, training=True)
-            loss = training.loss_function(target, prediction, pad=action_module.metadata["PAD"])
+            loss = training.loss_function(target, prediction,
+                    pad=action_module.metadata["PAD"])
             debug_info['loss'] = loss
             trainable_vars = action_module.uncontexted_trainable_variables()
 

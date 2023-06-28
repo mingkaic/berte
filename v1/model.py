@@ -61,32 +61,41 @@ class Preprocessor(tf.keras.Model):
     """
     Preprocessor are tied to vocab.
     """
-    def __init__(self, params):
+    @staticmethod
+    def from_loaded(loaded):
+        return Preprocessor(None,
+                args={
+                    "embedder": bert.InputEmbed.from_loaded(loaded.embedder),
+                    "iso_enc_encoder": bert.Encoder.from_loaded(loaded.iso_enc_encoder),
+                    "iso_lat_encoder": bert.Encoder.from_loaded(loaded.iso_lat_encoder),
+                })
+
+    def __init__(self, params, args=None):
         super().__init__()
 
-        num_layers = params["num_isolation_layers"]
-        model_dim = params["model_dim"]
-        latent_dim = params["latent_dim"]
-        num_heads = params["num_heads"]
-        max_pe = params["max_pe"]
-        dff = params["dff"]
-        vocab_size = params["vocab_size"]
-        dropout_rate = params["dropout_rate"]
-        self.embedder = bert.InputEmbed(model_dim, max_pe, vocab_size, dropout_rate)
-        self.iso_enc_encoder = bert.Encoder(num_layers,
-                                            bert.encoder_layer_init_param(
-                                                model_dim,
-                                                num_heads,
-                                                dff,
-                                                dropout_rate,
-                                                use_bias=True))
-        self.iso_lat_encoder = bert.Encoder(num_layers,
-                                            bert.encoder_layer_init_param(
-                                                latent_dim,
-                                                num_heads,
-                                                dff,
-                                                dropout_rate,
-                                                use_bias=True))
+        if args is not None:
+            self.embedder = args["embedder"]
+            self.iso_enc_encoder = args["iso_enc_encoder"]
+            self.iso_lat_encoder = args["iso_lat_encoder"]
+        else:
+            num_layers = params["num_isolation_layers"]
+            model_dim = params["model_dim"]
+            latent_dim = params["latent_dim"]
+            num_heads = params["num_heads"]
+            max_pe = params["max_pe"]
+            dff = params["dff"]
+            vocab_size = params["vocab_size"]
+            dropout_rate = params["dropout_rate"]
+            self.embedder = bert.InputEmbed(
+                bert.input_embed_init_builder().model_dim(model_dim).\
+                maximum_position_encoding(max_pe).vocab_size(vocab_size).\
+                dropout_rate(dropout_rate).build())
+            self.iso_enc_encoder = bert.Encoder(num_layers,
+                bert.encoder_init_builder().model_dim(model_dim).num_heads(num_heads).\
+                dff(dff).dropout_rate(dropout_rate).use_bias(True).build())
+            self.iso_lat_encoder = bert.Encoder(num_layers,
+                bert.encoder_init_builder().model_dim(model_dim).num_heads(num_heads).\
+                dff(dff).dropout_rate(dropout_rate).use_bias(True).build())
 
     def call(self, inputs, training=False, mask=None):
         """
@@ -96,16 +105,18 @@ class Preprocessor(tf.keras.Model):
         training = inputs.get("training", training)
         # inc.shape == (batch_size, ?)
         # emb.shape == (batch_size, ?, model_dim)
-        emb = self.embedder(bert.input_embed_call_param(inp, training))
+        emb = self.embedder(bert.input_embed_call_builder().inp(inp).training(training).build())
         # enc.shape == (batch_size, ?, model_dim)
         enc, atn_weights = self.iso_enc_encoder(
-            bert.encoder_call_param(emb, bert.create_padding_mask(inp),
-                                    training=training))
+            bert.encoder_call_builder().\
+                enc(emb).mask(bert.create_padding_mask(inp)).training(training).build(),
+            training=training)
 
         # enc_lat.shape == (batch_size, ?, latent_dim)
         enc_lat, atn_weights2 = self.iso_lat_encoder(
-            bert.encoder_call_param(emb, bert.create_padding_mask(inp),
-                                    training=training))
+            bert.encoder_call_builder().\
+                enc(emb).mask(bert.create_padding_mask(inp)).training(training).build(),
+            training=training)
         # lat.shape == (batch_size, latent_dim, model_dim)
         lat = tf.matmul(enc_lat, enc, transpose_a=True)
 
@@ -116,11 +127,18 @@ class Perceiver(tf.keras.Model):
     """
     Perceiver are independent of vocab.
     """
-    def __init__(self, params):
+    @staticmethod
+    def from_loaded(loaded):
+        return Perceiver(None, perm_perceiver=bert.Perceiver.from_loaded(loaded.perm_perceiver))
+
+    def __init__(self, params, perm_perceiver=None):
         super().__init__()
 
-        num_layers = params["num_perm_layers"]
-        self.perm_perceiver = bert.Perceiver(num_layers, params)
+        if perm_perceiver is not None:
+            self.perm_perceiver = perm_perceiver
+        else:
+            num_layers = params["num_perm_layers"]
+            self.perm_perceiver = bert.Perceiver(num_layers, params)
 
     def call(self, inputs, training=False, mask=None):
         """
@@ -131,25 +149,33 @@ class Perceiver(tf.keras.Model):
         training = inputs.get("training", training)
         # enc.shape == (batch_size, ?, model_dim)
         # latent.shape == (batch_size, latent_dim, model_dim)
-        return self.perm_perceiver(bert.perceiver_call_param(enc, latent, mask, training))
+        return self.perm_perceiver(bert.perceiver_call_builder().\
+                enc(enc).latent(latent).mask(mask).training(training).build())
 
 class Predictor(tf.keras.Model):
     """
     Predictor are dependent on vocab.
     """
-    def __init__(self, vocab_size, prediction_window):
+    @staticmethod
+    def from_loaded(loaded):
+        return Predictor(None, None, out=loaded.out)
+
+    def __init__(self, vocab_size, prediction_window, out=None):
         super().__init__()
 
-        self.out = tf.keras.Sequential([
-            tf.keras.layers.LayerNormalization(epsilon=1e-6),
-            # shape == (batch_size, latent_dim, vocab_size)
-            tf.keras.layers.Dense(vocab_size, use_bias=False),
-            # shape == (batch_size, vocab_size, latent_dim)
-            tf.keras.layers.Permute((2, 1)),
-            tf.keras.layers.Dense(prediction_window, use_bias=False, activation='sigmoid'),
-            # shape == (batch_size, latent_dim, vocab_size)
-            tf.keras.layers.Permute((2, 1)),
-        ])
+        if out is not None:
+            self.out = out
+        else:
+            self.out = tf.keras.Sequential([
+                tf.keras.layers.LayerNormalization(epsilon=1e-6),
+                # shape == (batch_size, latent_dim, vocab_size)
+                tf.keras.layers.Dense(vocab_size, use_bias=False),
+                # shape == (batch_size, vocab_size, latent_dim)
+                tf.keras.layers.Permute((2, 1)),
+                tf.keras.layers.Dense(prediction_window, use_bias=False, activation='sigmoid'),
+                # shape == (batch_size, latent_dim, vocab_size)
+                tf.keras.layers.Permute((2, 1)),
+            ])
 
     def call(self, inputs, training=None, mask=None):
         """
@@ -170,12 +196,14 @@ class PretrainerMLMMetadataBuilder:
         tmp_sp.load(tokenizer_filename)
 
         return self.\
-                add_metadata(tmp_sp.piece_to_id('<sep>'), 'SEP').\
-                add_metadata(tmp_sp.piece_to_id('<mask>'), 'MASK').\
-                add_metadata(tmp_sp.unk_id(), 'UNK').\
-                add_metadata(tmp_sp.bos_id(), 'BOS').\
-                add_metadata(tmp_sp.eos_id(), 'EOS').\
-                add_metadata(tmp_sp.pad_id(), 'PAD')
+            add_metadata(
+                tf.Variable(tmp_sp.piece_to_id('<sep>'), trainable=False, name='sep'), 'SEP').\
+            add_metadata(
+                tf.Variable(tmp_sp.piece_to_id('<mask>'), trainable=False, name='mask'), 'MASK').\
+            add_metadata(tf.Variable(tmp_sp.unk_id(), trainable=False, name='unk'), 'UNK').\
+            add_metadata(tf.Variable(tmp_sp.bos_id(), trainable=False, name='bos'), 'BOS').\
+            add_metadata(tf.Variable(tmp_sp.eos_id(), trainable=False, name='eos'), 'EOS').\
+            add_metadata(tf.Variable(tmp_sp.pad_id(), trainable=False, name='pad'), 'PAD')
 
     def optimizer_iter(self, value):
         """ add optimizer init """
@@ -217,6 +245,18 @@ class PretrainerMLM(tf.Module):
     """
     Collection of models used in pretrainining using Masked Language Modeling.
     """
+    @staticmethod
+    def from_loaded(tokenizer, loaded):
+        return PretrainerMLM(tokenizer,
+                loaded.params,
+                loaded.metadata,
+                args={
+                    "preprocessor": Preprocessor.from_loaded(loaded.preprocessor),
+                    "perceiver":  Perceiver.from_loaded(loaded.perceiver),
+                    "latenter":  bert.Encoder.from_loaded(loaded.latenter),
+                    "mask_pred":  Predictor.from_loaded(loaded.mask_predictor),
+                })
+
     def __init__(self, tokenizer, params, metadata, args=None):
         super().__init__()
 
@@ -230,12 +270,9 @@ class PretrainerMLM(tf.Module):
             self.preprocessor = Preprocessor(params)
             self.perceiver = Perceiver(params)
             self.latenter = bert.Encoder(params["num_latent_layers"],
-                                    bert.encoder_layer_init_param(
-                                        params["model_dim"],
-                                        params["num_heads"],
-                                        params["dff"],
-                                        params["dropout_rate"],
-                                        use_bias=False))
+                bert.encoder_init_builder().model_dim(params["model_dim"]).\
+                num_heads(params["num_heads"]).dff(params["dff"]).\
+                dropout_rate(params["dropout_rate"]).use_bias(False).build())
             self.mask_predictor = Predictor(params["vocab_size"],
                                             params["dataset_width"])
 
@@ -255,10 +292,11 @@ class PretrainerMLM(tf.Module):
             preprocessor_call_param(tokens, training=training),
             training=training)
         enc2, _ = self.perceiver(
-            perceiver_call_param(enc, latent, training=training),
+            bert.perceiver_call_builder().enc(enc).latent(latent).training(training).build(),
             training=training)
         latent_pred, _ = self.latenter(
-            bert.encoder_call_param(enc2, training=training), training=training)
+            bert.encoder_call_builder().enc(enc2).training(training).build(),
+            training=training)
         debug_info = {
             'latent_prediction.preprocessor_enc': enc,
             'latent_prediction.preprocessor_latent': latent,
