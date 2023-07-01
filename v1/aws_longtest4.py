@@ -22,8 +22,8 @@ from aws_common.instance import get_instance
 def shorten_shards(training_shards):
     """ take 1 from each shard and take the first 3 shads """
     result = dict()
-    for training_key in list(training_shards.keys())[:2]:
-        result[training_key] = training_shards[training_key].take(1)
+    for training_key in training_shards.keys():
+        result[training_key] = training_shards[training_key].take(10)
     return result
 
 if __name__ == '__main__':

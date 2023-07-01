@@ -14,7 +14,7 @@ import tensorflow_text as text
 import tensorflow as tf
 
 # local packages
-import model
+import models
 import dataset
 import traintest
 import telemetry
@@ -26,9 +26,8 @@ QUOTA_BUCKET_RECOVER = 10
 QUOTA_BUCKET_RECOVER_RATE = 50
 SKIP_LOSS_WINDOW = 200
 
-def _setup_pretrainer(tokenizer_filename, tokenizer_setup, optimizer,
-        in_model_dir, load_options, *args):
-    builder = model.InitParamBuilder()
+def _setup_pretrainer(tokenizer_filename, tokenizer_setup, optimizer, in_model_dir, *args):
+    builder = models.InitParamBuilder()
     for arg in args:
         for key in arg:
             builder.add_param(arg[key], key)
@@ -38,16 +37,17 @@ def _setup_pretrainer(tokenizer_filename, tokenizer_setup, optimizer,
                                                 out_type=tf.int32,
                                                 add_bos=tokenizer_setup["add_bos"],
                                                 add_eos=tokenizer_setup["add_eos"])
-    if in_model_dir is not None:
-        return model.PretrainerMLM.from_loaded(tokenizer,
-                tf.saved_model.load(in_model_dir, options=load_options))
+    metadata = models.PretrainerMLMMetadataBuilder().\
+        tokenizer_meta(tokenizer_filename).\
+        optimizer_iter(optimizer.iterations).build()
 
-    return model.PretrainerMLM(
+    if in_model_dir is not None:
+        return models.PretrainerMLM.load(tokenizer, metadata, in_model_dir)
+
+    return models.PretrainerMLM(
             tokenizer=tokenizer,
             params=builder.build(),
-            metadata=model.PretrainerMLMMetadataBuilder().
-                tokenizer_meta(tokenizer_filename).
-                optimizer_iter(optimizer.iterations).build())
+            metadata=metadata)
 
 def _setup_cached_args(tokenizer_filename, tokenizer_setup, dataset_path):
     with open(tokenizer_filename, 'rb') as file:
@@ -68,17 +68,11 @@ def main(logger, outdir,
         model_id='berte_pretrain_mlm_15p',
         training_preprocessing=None,
         context_rate_overwrite=None,
-        ckpt_options=None,
-        save_options=None,
-        load_options=None):
+        ckpt_options=None):
     """ actually pretrains some model """
 
     if ckpt_options is None:
         ckpt_options = tf.train.CheckpointOptions()
-    if save_options is None:
-        save_options = tf.saved_model.SaveOptions()
-    if load_options is None:
-        load_options = tf.saved_model.LoadOptions()
 
     # --------- Extract configs and cached values ---------
     with open("configs/pretrain_1.yaml") as file:
@@ -96,9 +90,9 @@ def main(logger, outdir,
 
     # --------- Setup Dataset and Model ---------
     learning_rate = training.CustomSchedule(model_args["model_dim"])
-    optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
     pretrainer = _setup_pretrainer(tokenizer_filename, tokenizer_setup, optimizer,
-            in_model_dir, load_options, cached_args, model_args)
+            in_model_dir, cached_args, model_args)
 
     training_shards, _ = dataset.setup_shards(dataset_shard_dirpath, training_args,
                                                           pretrainer.tokenizer, logger=logger)
@@ -179,7 +173,7 @@ def main(logger, outdir,
 
     # --------- Training ---------
     run_epochs(nepochs)
-    tf.saved_model.save(pretrainer, os.path.join(outdir, model_id), options=save_options)
+    pretrainer.save(os.path.join(outdir, model_id))
 
 if __name__ == '__main__':
     # local logging

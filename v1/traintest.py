@@ -78,13 +78,14 @@ def build_pretrainer(action_module, optimizer, batch_shape):
     ])
     def contexted_persentence_mlm_pretrain(orig, source, target, worst_loss):
         with tf.GradientTape() as tape:
-            _, lat, debug_info = action_module.latent_prediction(orig, training=True)
+            lat, debug_info = action_module.latent_prediction(orig, training=True)
             prediction, debug_info2 = action_module.mask_prediction(source, latent_pred=lat, training=True)
             loss = training.loss_function(target, prediction,
                     pad=action_module.metadata["PAD"])
             debug_info.update(debug_info2)
             debug_info['loss'] = loss
             trainable_vars = action_module.contexted_trainable_variables()
+            gradients = tape.gradient(loss, trainable_vars)
 
         if tf.math.is_nan(loss):
             return debug_info, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
@@ -92,7 +93,6 @@ def build_pretrainer(action_module, optimizer, batch_shape):
         if loss > worst_loss: # skip bad batches
             return debug_info, UNSTABLE_LOSS_ERR_CODE # return instead of raise, since tf has issues
 
-        gradients = tape.gradient(loss, trainable_vars)
         optimizer.apply_gradients(zip(gradients, trainable_vars))
         train_loss(loss)
         train_accuracy(training.accuracy_function(target, prediction))
@@ -110,6 +110,7 @@ def build_pretrainer(action_module, optimizer, batch_shape):
                     pad=action_module.metadata["PAD"])
             debug_info['loss'] = loss
             trainable_vars = action_module.uncontexted_trainable_variables()
+            gradients = tape.gradient(loss, trainable_vars)
 
         if tf.math.is_nan(loss):
             return debug_info, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
@@ -117,7 +118,6 @@ def build_pretrainer(action_module, optimizer, batch_shape):
         if loss > worst_loss: # skip bad batches
             return debug_info, UNSTABLE_LOSS_ERR_CODE # return instead of raise, since tf has issues
 
-        gradients = tape.gradient(loss, trainable_vars)
         optimizer.apply_gradients(zip(gradients, trainable_vars))
         train_loss(loss)
         train_accuracy(training.accuracy_function(target, prediction))

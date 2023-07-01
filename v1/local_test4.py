@@ -5,6 +5,7 @@ This tests 4_persentence_pretrain_mlm_15p.ipynb locally
 # standard packages
 import os
 import logging
+import shutil
 
 # business logic
 from ps_pretrain_mlm_15p import main
@@ -22,16 +23,18 @@ if __name__ == '__main__':
                         filemode='w')
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
+    # first "epoch" to generate model
     main(logger, 'tmp',
             ckpt_id='test',
             model_id='test',
             training_preprocessing=shorten_shards,
             context_rate_overwrite=2.0)
+    # second "epoch" to read model
     main(logger, 'tmp',
             in_model_dir='tmp/test',
             ckpt_id='test',
             model_id='test',
             training_preprocessing=shorten_shards,
             context_rate_overwrite=2.0)
-    os.rmdir('tmp/test') # remove model
-    os.rmdir('tmp/checkpoints/test') # remove checkpoints
+    shutil.rmtree('tmp/test') # remove model
+    shutil.rmtree('tmp/checkpoints/test') # remove checkpoints

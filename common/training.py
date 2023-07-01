@@ -26,9 +26,9 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
     def get_config(self):
         return {
-                "d_model": self.d_model,
-                "warmup_steps": self.warmup_steps,
-                }
+            "d_model": self.d_model,
+            "warmup_steps": self.warmup_steps,
+        }
 
 class QuotaBucket:
     """
