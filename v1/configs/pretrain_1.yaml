@@ -19,5 +19,5 @@ training_settings:
     epochs_per_save: 1
     shards_per_save: 1
     skip_bad_loss:
-        stdev_coeff: 2
+        stdev_coeff: 15
         warmup: 5000

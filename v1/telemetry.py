@@ -5,6 +5,7 @@ This module includes logging and reporting functions
 
 import logging
 
+import numpy as np
 import tensorflow as tf
 
 class EmptyLogger:
@@ -25,9 +26,11 @@ def detail_reporter(logger, tokenizer):
     """ Return reporting function that detokenize tokens and error to sentences """
     def _reporter(tokens, debug_info):
         if isinstance(tokens, tf.Tensor):
-            sentences = tokenizer.detokenizer(tokens).numpy()
+            sentences = tokenizer.detokenize(tokens).numpy()
             logger.error('sentences:{}'.format(','.join([
-                '"' + sentence + '"' for sentence in sentences])))
+                '"' + str(sentence) + '"' for sentence in sentences])))
         for debug_key in debug_info:
-            logger.error('{}:{}'.format(debug_key, debug_info[debug_key].numpy()))
+            hasnan = np.isnan(debug_info[debug_key].numpy()).any()
+            logger.error('{}:{} (has nan: {})'.format(
+                debug_key, debug_info[debug_key].numpy(), hasnan))
     return _reporter

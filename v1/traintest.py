@@ -12,24 +12,26 @@ import tensorflow as tf
 import telemetry
 import common.training as training
 
-def mask_lm(tokens, lengths, mask_rate, mask_sizes, pad):
+def mask_lm(tokens, lengths, mask_rate, pad, ds_width):
     """ given padded tokens, return mask_rate portion of tokens """
     if isinstance(lengths, tf.Tensor):
         lengths = lengths.numpy()
     lengths -= 2 # exclude bos and eos
 
     num_masked = np.maximum(1, mask_rate * lengths).astype(int)
-    npmask = np.zeros(mask_sizes)
+    npmask = np.zeros((tokens.shape[0], ds_width))
     for i, (length, size) in enumerate(zip(lengths, num_masked)):
         if length > 0:
             indices = np.random.choice(length, size=size, replace=False) + 1 # after bos
             npmask[i, indices] = 1
 
-    tokens = tf.pad(tokens, ([0, 0], [0, mask_sizes[1] - tokens.numpy().shape[1]]),
-            constant_values=pad)
+    tokens = tf.pad(tokens, ([0, 0], [0, ds_width - tokens.numpy().shape[1]]),
+        constant_values=pad)
     mask = tf.constant(npmask, dtype=tf.int32)
     not_mask = tf.abs(1 - mask)
-    return tokens, tokens * not_mask, tokens * mask
+    not_masked_tokens = tokens * not_mask
+    masked_tokens = tokens * mask
+    return tokens, not_masked_tokens, masked_tokens
 
 def build_tester(action_module, samples, mask_sizes, logger):
     """ build_tester returns a callable that tests the samples """
@@ -38,8 +40,7 @@ def build_tester(action_module, samples, mask_sizes, logger):
     tokens = action_module.tokenize(sentences)
     lengths = np.array([len(token) for token in tokens.numpy()])
     _, masked_tokens, masked = mask_lm(tokens, lengths, 0.1,
-            mask_sizes=mask_sizes,
-            pad=action_module.metadata["PAD"])
+        pad=action_module.metadata["PAD"], ds_width=mask_sizes[1])
 
     def tester():
         prediction, _ = action_module.mask_prediction(masked_tokens, training=False)
@@ -65,10 +66,11 @@ NAN_LOSS_ERR_CODE = 1
 
 UNSTABLE_LOSS_ERR_CODE = 2
 
-def build_pretrainer(action_module, optimizer, batch_shape):
+def build_pretrainer(action_module, optimizer, ds_width):
     """ build_trainer returns a callable that trains a batch """
     train_loss = tf.keras.metrics.Mean(name='train_loss')
     train_accuracy = tf.keras.metrics.Mean(name='train_accuracy')
+    batch_shape = (None, ds_width)
 
     @tf.function(input_signature=[
         tf.TensorSpec(shape=batch_shape, dtype=tf.int32),
@@ -79,11 +81,13 @@ def build_pretrainer(action_module, optimizer, batch_shape):
     def contexted_persentence_mlm_pretrain(orig, source, target, worst_loss):
         with tf.GradientTape() as tape:
             lat, debug_info = action_module.latent_prediction(orig, training=True)
-            prediction, debug_info2 = action_module.mask_prediction(source, latent_pred=lat, training=True)
-            loss = training.loss_function(target, prediction,
-                    pad=action_module.metadata["PAD"])
-            debug_info.update(debug_info2)
+            prediction, debug_info2 = action_module.mask_prediction(source,
+                latent_pred=lat, training=True)
+            loss, debug_info3 = training.loss_function(target, prediction,
+                pad=action_module.metadata["PAD"])
             debug_info['loss'] = loss
+            debug_info.update(debug_info2)
+            debug_info.update(debug_info3)
             trainable_vars = action_module.contexted_trainable_variables()
             gradients = tape.gradient(loss, trainable_vars)
 
@@ -106,9 +110,10 @@ def build_pretrainer(action_module, optimizer, batch_shape):
     def uncontexted_persentence_mlm_pretrain(source, target, worst_loss):
         with tf.GradientTape() as tape:
             prediction, debug_info = action_module.mask_prediction(source, training=True)
-            loss = training.loss_function(target, prediction,
+            loss, debug_info2 = training.loss_function(target, prediction,
                     pad=action_module.metadata["PAD"])
             debug_info['loss'] = loss
+            debug_info.update(debug_info2)
             trainable_vars = action_module.uncontexted_trainable_variables()
             gradients = tape.gradient(loss, trainable_vars)
 
@@ -125,8 +130,7 @@ def build_pretrainer(action_module, optimizer, batch_shape):
 
     def pretrainer(batch, lengths, prev_loss, mask_rate, context_rate):
         orig, source, target = mask_lm(batch, lengths, mask_rate,
-                mask_sizes=batch_shape,
-                pad=action_module.metadata["PAD"])
+            pad=action_module.metadata["PAD"], ds_width=ds_width)
         target = tf.cast(target, tf.int64)
         if np.random.rand() < context_rate:
             return contexted_persentence_mlm_pretrain(orig, source, target, prev_loss)

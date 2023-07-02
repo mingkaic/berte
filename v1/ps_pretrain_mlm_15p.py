@@ -68,7 +68,8 @@ def main(logger, outdir,
         model_id='berte_pretrain_mlm_15p',
         training_preprocessing=None,
         context_rate_overwrite=None,
-        ckpt_options=None):
+        ckpt_options=None,
+        skip_shards=None):
     """ actually pretrains some model """
 
     if ckpt_options is None:
@@ -95,11 +96,10 @@ def main(logger, outdir,
             in_model_dir, cached_args, model_args)
 
     training_shards, _ = dataset.setup_shards(dataset_shard_dirpath, training_args,
-                                                          pretrainer.tokenizer, logger=logger)
+        pretrainer.tokenizer, logger=logger)
     if training_preprocessing is not None:
         training_shards = training_preprocessing(training_shards)
 
-    _batch_shape = (training_args["batch_size"], cached_args["dataset_width"])
     run_test = traintest.build_tester(pretrainer,
             samples=[
                 "este é um problema que temos que resolver.",
@@ -113,10 +113,10 @@ def main(logger, outdir,
                 "este é o primeiro livro que eu fiz.",
                 "this is the first book i've ever done.",
             ],
-            mask_sizes=_batch_shape,
+            mask_sizes=(training_args["batch_size"], cached_args["dataset_width"]),
             logger=logger)
     train_batch, train_loss, train_accuracy = traintest.build_pretrainer(
-            pretrainer, optimizer, _batch_shape)
+            pretrainer, optimizer, cached_args["dataset_width"])
 
     ckpt = tf.train.Checkpoint(optimizer=optimizer, pretrainer=pretrainer)
     ckpt_manager = tf.train.CheckpointManager(ckpt,
@@ -172,7 +172,7 @@ def main(logger, outdir,
             logger.info('Time taken for 1 epoch: %.2f secs', time.time() - start)
 
     # --------- Training ---------
-    run_epochs(nepochs)
+    run_epochs(nepochs, skip_shards=skip_shards)
     pretrainer.save(os.path.join(outdir, model_id))
 
 if __name__ == '__main__':
