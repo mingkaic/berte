@@ -22,8 +22,8 @@ from aws_common.instance import get_instance
 def shorten_shards(training_shards):
     """ take 1 from each shard and take the first 3 shads """
     result = dict()
-    for training_key in list(training_shards.keys())[:2]:
-        result[training_key] = training_shards[training_key].take(1)
+    for training_key in training_shards.keys():
+        result[training_key] = training_shards[training_key].take(10)
     return result
 
 if __name__ == '__main__':
@@ -39,9 +39,9 @@ if __name__ == '__main__':
 
     syncer = init.S3BucketSyncer(S3_BUCKET)
     syncer.download_if_notfound('configs',
-            os.path.join(S3_DIR, ID, 's3_configs.tar.gz'))
+            os.path.join(S3_DIR, '4_persentence_pretrain_mlm_15p', 's3_configs.tar.gz'))
     syncer.download_if_notfound('export',
-            os.path.join(S3_DIR, ID, 's3_export.tar.gz'))
+            os.path.join(S3_DIR, '4_persentence_pretrain_mlm_15p', 's3_export.tar.gz'))
 
     logger = init.create_logger(ID, CLOUDWATCH_GROUP, EC2_REGION)
 

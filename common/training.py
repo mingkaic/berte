@@ -48,6 +48,7 @@ class QuotaBucket:
         """
         Return True if bucket still in warmup phase
         """
+
         if self.iter < self.warmup:
             return True
         return False
@@ -56,6 +57,7 @@ class QuotaBucket:
         """
         Return True if bucket still have quota
         """
+
         return self.quota > 0
 
     def update(self, failed):
@@ -63,6 +65,7 @@ class QuotaBucket:
         Increment counters depending on whether failed.
         If failed, quota depletes but never below 0.
         """
+
         self.iter += 1
         if self.iter % self.bucket_recover_rate == 0:
             self.quota = max(self.quota + self.bucket_recover, self.bucket_capacity)
@@ -94,6 +97,7 @@ class LossWindow:
         stdev_coeff: the "loss benchmark" is mean + stdev_coeff * stdev.
                      E.g. when stdev_coeff=1, return the worst ~15%-tile of the window
         """
+
         if len(self.window) == 0:
             return default_value
 
@@ -106,7 +110,7 @@ class LossWindow:
         Add loss value to the window.
         """
 
-        self.window.append(loss)
+        self.window.append(tf.math.reduce_mean(loss))
         if len(self.window) > self.capacity:
             self.window.pop(0)
 

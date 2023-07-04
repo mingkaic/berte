@@ -66,7 +66,7 @@ NAN_LOSS_ERR_CODE = 1
 
 UNSTABLE_LOSS_ERR_CODE = 2
 
-def build_pretrainer(action_module, optimizer, ds_width):
+def build_pretrainer(action_module, optimizer, ds_width, skip_loss):
     """ build_trainer returns a callable that trains a batch """
     train_loss = tf.keras.metrics.Mean(name='train_loss')
     train_accuracy = tf.keras.metrics.Mean(name='train_accuracy')
@@ -92,10 +92,10 @@ def build_pretrainer(action_module, optimizer, ds_width):
             gradients = tape.gradient(loss, trainable_vars)
 
         if tf.math.is_nan(loss):
-            return debug_info, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
+            return debug_info, NAN_LOSS_ERR_CODE
 
-        if loss > worst_loss: # skip bad batches
-            return debug_info, UNSTABLE_LOSS_ERR_CODE # return instead of raise, since tf has issues
+        if not skip_loss and loss > worst_loss:
+            return debug_info, UNSTABLE_LOSS_ERR_CODE
 
         optimizer.apply_gradients(zip(gradients, trainable_vars))
         train_loss(loss)
@@ -118,10 +118,10 @@ def build_pretrainer(action_module, optimizer, ds_width):
             gradients = tape.gradient(loss, trainable_vars)
 
         if tf.math.is_nan(loss):
-            return debug_info, NAN_LOSS_ERR_CODE # return instead of raise, since tf has issues
+            return debug_info, NAN_LOSS_ERR_CODE
 
-        if loss > worst_loss: # skip bad batches
-            return debug_info, UNSTABLE_LOSS_ERR_CODE # return instead of raise, since tf has issues
+        if not skip_loss and loss > worst_loss:
+            return debug_info, UNSTABLE_LOSS_ERR_CODE
 
         optimizer.apply_gradients(zip(gradients, trainable_vars))
         train_loss(loss)
@@ -240,6 +240,6 @@ class EpochPretrainer:
 
                 batch += 1
 
-            if ((shard + 1) % self.args["training_settings"]["shards_per_save"] == 0):
+            if (shard + 1) % self.args["training_settings"]["shards_per_save"] == 0:
                 logger.info('Saving checkpoint for shard %d at %s',
                         shard+1, self.args["ckpt_save_cb"](None))

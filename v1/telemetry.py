@@ -30,7 +30,7 @@ def detail_reporter(logger, tokenizer):
             logger.error('sentences:{}'.format(','.join([
                 '"' + str(sentence) + '"' for sentence in sentences])))
         for debug_key in debug_info:
-            hasnan = np.isnan(debug_info[debug_key].numpy()).any()
-            logger.error('{}:{} (has nan: {})'.format(
-                debug_key, debug_info[debug_key].numpy(), hasnan))
+            debug_val = debug_info[debug_key].numpy()
+            hasnan = np.isnan(debug_val).any()
+            logger.error('{}:{} (has nan: {})'.format(debug_key, debug_val, hasnan))
     return _reporter

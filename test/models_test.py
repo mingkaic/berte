@@ -66,8 +66,9 @@ class ModelTest(unittest.TestCase):
         swiglu = models.SwiGLU(5, use_bias=biased)
         swiglu_model = SwiGLUModel(swiglu)
 
-        inp = tf.Variable((np.random.rand(3, 4, 5) + 10) / 5, dtype=tf.float32)
+        inp = tf.random.uniform((3, 4, 5), dtype=tf.float32)
         out = swiglu_model(inp)
+        self.assertFalse(np.isnan(out.numpy()).any())
 
         modelpath = os.path.join('/tmp', str(uuid.uuid4()))
         swiglu_model.save(modelpath)
@@ -82,9 +83,10 @@ class ModelTest(unittest.TestCase):
         mha = models.UnmaskedMultiHeadAttention(15, 5, use_bias=biased)
         mha_model = MhaModel(mha)
 
-        query = tf.Variable((np.random.rand(3, 5, 15) + 10) / 5, dtype=tf.float32)
-        keyval = tf.Variable((np.random.rand(3, 4, 15) + 10) / 5, dtype=tf.float32)
+        query = tf.random.uniform((3, 5, 15), dtype=tf.float32)
+        keyval = tf.random.uniform((3, 4, 15), dtype=tf.float32)
         out = mha_model(query, keyval, keyval)
+        self.assertFalse(np.isnan(out.numpy()).any())
 
         modelpath = os.path.join('/tmp', str(uuid.uuid4()))
         mha_model.save(modelpath)
@@ -99,10 +101,11 @@ class ModelTest(unittest.TestCase):
         mha = models.MaskedMultiHeadAttention(15, 5, use_bias=biased)
         mha_model = MMhaModel(mha)
 
-        mask = tf.Variable((np.random.rand(3, 5, 5, 4) + 10) / 5, dtype=tf.float32)
-        query = tf.Variable((np.random.rand(3, 5, 15) + 10) / 5, dtype=tf.float32)
-        keyval = tf.Variable((np.random.rand(3, 4, 15) + 10) / 5, dtype=tf.float32)
+        mask = tf.random.uniform((3, 5, 5, 4), dtype=tf.float32)
+        query = tf.random.uniform((3, 5, 15), dtype=tf.float32)
+        keyval = tf.random.uniform((3, 4, 15), dtype=tf.float32)
         out = mha_model(query, keyval, keyval, mask)
+        self.assertFalse(np.isnan(out.numpy()).any())
 
         modelpath = os.path.join('/tmp', str(uuid.uuid4()))
         mha_model.save(modelpath)

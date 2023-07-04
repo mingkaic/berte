@@ -69,7 +69,8 @@ def main(logger, outdir,
         training_preprocessing=None,
         context_rate_overwrite=None,
         ckpt_options=None,
-        skip_shards=None):
+        skip_shards=None,
+        skip_loss=True):
     """ actually pretrains some model """
 
     if ckpt_options is None:
@@ -116,7 +117,7 @@ def main(logger, outdir,
             mask_sizes=(training_args["batch_size"], cached_args["dataset_width"]),
             logger=logger)
     train_batch, train_loss, train_accuracy = traintest.build_pretrainer(
-            pretrainer, optimizer, cached_args["dataset_width"])
+            pretrainer, optimizer, cached_args["dataset_width"], skip_loss)
 
     ckpt = tf.train.Checkpoint(optimizer=optimizer, pretrainer=pretrainer)
     ckpt_manager = tf.train.CheckpointManager(ckpt,
@@ -126,7 +127,7 @@ def main(logger, outdir,
 
     # if a checkpoint exists, restore the latest checkpoint.
     if ckpt_manager.latest_checkpoint:
-        ckpt.restore(ckpt_manager.latest_checkpoint)
+        ckpt.restore(ckpt_manager.latest_checkpoint, options=ckpt_options)
         logger.info('Latest checkpoint restored!!')
 
     bucket = training.QuotaBucket(training_settings["skip_bad_loss"]["warmup"],

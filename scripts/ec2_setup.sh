@@ -29,7 +29,7 @@ cd ..
 source gpu_bashrc.sh
 
 # workaround
-mkdir $CONDA_PREFIX/lib/nvvm/libdevice
+mkdir -p $CONDA_PREFIX/lib/nvvm/libdevice
 ln -s $CONDA_PREFIX/lib/libdevice.10.bc $CONDA_PREFIX/lib/nvvm/libdevice/libdevice.10.bc
 ln -s $CONDA_PREFIX/lib/libcusolver.so.10 $CONDA_PREFIX/lib/libcusolver.so.11
 

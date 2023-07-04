@@ -64,16 +64,15 @@ class Preprocessor(tf.keras.Model):
     """
     def __init__(self, params):
         super().__init__()
+        self.params = params
         num_layers = params['num_isolation_layers']
         model_dim = params['model_dim']
-        latent_dim = params['latent_dim']
         num_heads = params['num_heads']
         max_pe = params['max_pe']
         dff = params['dff']
         vocab_size = params['vocab_size']
         dropout_rate = params['dropout_rate']
 
-        self.params = params
         self.embedder = berts.InputEmbed(model_dim,
             berts.input_embed_init_builder().maximum_position_encoding(max_pe).\
             vocab_size(vocab_size).dropout_rate(dropout_rate).build())
@@ -84,6 +83,10 @@ class Preprocessor(tf.keras.Model):
             berts.encoder_init_builder().model_dim(model_dim).num_heads(num_heads).\
             dff(dff).dropout_rate(dropout_rate).use_bias(True).build())
 
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+        tf.TensorSpec(shape=None, dtype=tf.bool),
+    ])
     def call(self, inputs, training=False):
         """
         Model call implementation
@@ -100,17 +103,31 @@ class Preprocessor(tf.keras.Model):
 
         return enc, lat
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({ 'params': self.params })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
 class Perceiver(tf.keras.Model):
     """
     Perceiver are independent of vocab.
     """
     def __init__(self, params):
         super().__init__()
+        self.params = params
         num_layers = params['num_perm_layers']
 
-        self.params = params
         self.perm_perceiver = berts.Perceiver(num_layers, params)
 
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
+        tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
+        tf.TensorSpec(shape=None, dtype=tf.bool),
+    ])
     def call(self, inputs, latent, training=False):
         """
         Model call implementation
@@ -119,53 +136,105 @@ class Perceiver(tf.keras.Model):
         # latent.shape == (batch_size, latent_dim, model_dim)
         return self.perm_perceiver(inputs, latent, training)
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({ 'params': self.params })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
 class Latenter(tf.keras.Model):
     """
     Latenter is basically an encoder.
     """
     def __init__(self, params):
         super().__init__()
-
         self.params = params
+
         self.latenter = berts.Encoder(params['num_latent_layers'],
             berts.encoder_init_builder().model_dim(params['model_dim']).\
             num_heads(params['num_heads']).dff(params['dff']).\
             dropout_rate(params['dropout_rate']).use_bias(False).build())
 
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
+        tf.TensorSpec(shape=None, dtype=tf.bool),
+    ])
     def call(self, inputs, training=False):
         """
         Model call implementation
         """
         return self.latenter(inputs, training)
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({ 'params': self.params })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
 class Predictor(tf.keras.Model):
     """
     Predictor are dependent on vocab.
     """
-    def __init__(self, vocab_size, prediction_window):
+    def __init__(self, params):
         super().__init__()
+        self.params = params
+        self.latent_dim = params['latent_dim']
+        self.model_dim = params['model_dim']
+        vocab_size = params['vocab_size']
+        prediction_window = params["dataset_width"]
 
-        self.vocab_size = vocab_size
-        self.prediction_window = prediction_window
-        self.out = tf.keras.Sequential([
-            tf.keras.layers.LayerNormalization(epsilon=1e-6),
-            # shape == (batch_size, latent_dim, vocab_size)
-            tf.keras.layers.Dense(vocab_size, use_bias=False),
-            # shape == (batch_size, vocab_size, latent_dim)
+        self.norm_layer = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.vocab_pred = tf.keras.layers.Dense(vocab_size, use_bias=False)
+        self.window_pred = tf.keras.Sequential([
             tf.keras.layers.Permute((2, 1)),
             tf.keras.layers.Dense(prediction_window, use_bias=False, activation='sigmoid'),
-            # shape == (batch_size, latent_dim, vocab_size)
             tf.keras.layers.Permute((2, 1)),
         ])
 
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
+        tf.TensorSpec(shape=None, dtype=tf.bool),
+    ])
     def call(self, inputs, training=False):
         """
         Model call implementation
         """
         # inputs.shape == (batch_size, latent_dim, model_dim)
-        # shape == (batch_size, vocab_size, window_size)
-        prediction = self.out(inputs, training=training)
-        return prediction / tf.reduce_sum(prediction, axis=-1, keepdims=True)
+        inputs = tf.ensure_shape(inputs, [None, self.latent_dim, self.model_dim])
+        norm_inp = self.norm_layer(inputs, training=training)
+        # shape == (batch_size, latent_dim, vocab_size)
+        vocab_p = self.vocab_pred(norm_inp, training=training)
+        # shape == (batch_size, window_size, vocab_size)
+        prediction = self.window_pred(vocab_p, training=training)
+
+        normpred = tf.sigmoid(prediction)
+        npsum = tf.reduce_sum(normpred, axis=-1, keepdims=True)
+        result = normpred / npsum
+        debug_info = {
+            'predictor.norm_inp': norm_inp,
+            'predictor.vocab_p': vocab_p,
+            'predictor.prediction': prediction,
+            'predictor.normpred': normpred,
+            'predictor.npsum': npsum,
+        }
+        return result, debug_info
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'params': self.params,
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 class PretrainerMLMMetadataBuilder:
     """ build mlm pretrainer module metadata """
@@ -247,10 +316,10 @@ class PretrainerMLM(tf.Module):
             self.preprocessor = Preprocessor(params)
             self.perceiver = Perceiver(params)
             self.latenter = Latenter(params)
-            self.mask_predictor = Predictor(params["vocab_size"],
-                                            params["dataset_width"])
+            self.mask_predictor = Predictor(params)
 
     def save(self, model_path):
+        """ save models under model_path """
         if not os.path.exists(model_path):
             os.mkdir(model_path)
 
@@ -286,13 +355,13 @@ class PretrainerMLM(tf.Module):
         if latent_pred is not None:
             latent = latent_pred
         enc2 = self.perceiver(enc, latent, training=training)
-        pred = self.mask_predictor(enc2)
-        debug_info = {
+        pred, debug_info = self.mask_predictor(enc2)
+        debug_info.update({
             'mask_prediction.preprocessor_enc': enc,
             'mask_prediction.preprocessor_latent': latent,
             'mask_prediction.perceiver_enc': enc2,
             'mask_prediction.prediction': pred,
-        }
+        })
         return (pred, debug_info)
 
     def contexted_trainable_variables(self):
