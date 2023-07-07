@@ -57,9 +57,6 @@ class SwiGLU(tf.keras.layers.Layer):
         tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
     ])
     def call(self, inputs):
-        """
-        Layer call implementation
-        """
         inputs = tf.ensure_shape(inputs, [None, None, self.in_size])
         tmp = self.dense(inputs) # shape=[None, None, 2*in_size]
         unsilued = tmp[:, :, :self.in_size]
@@ -102,9 +99,6 @@ class UnmaskedMultiHeadAttention(tf.keras.layers.Layer):
         tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
     ])
     def call(self, query, key, value):
-        """
-        Layer call implementation
-        """
         batch_size = tf.shape(query)[0]
 
         query = tf.ensure_shape(query, [None, None, self.model_dim])
@@ -182,9 +176,6 @@ class MaskedMultiHeadAttention(tf.keras.layers.Layer):
         tf.TensorSpec(shape=[None, None, None, None], dtype=tf.float32),
     ])
     def call(self, query, key, value, mask):
-        """
-        Layer call implementation
-        """
         batch_size = tf.shape(query)[0]
 
         query = tf.ensure_shape(query, [None, None, self.model_dim])

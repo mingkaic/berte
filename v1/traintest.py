@@ -46,20 +46,23 @@ def build_tester(action_module, samples, mask_sizes, logger):
         prediction, _ = action_module.mask_prediction(masked_tokens, training=False)
         for i, sentence in enumerate(samples):
             localmask = masked[i, :]
-            maskidx = tf.argmax(localmask)
-            masktok = localmask[maskidx]
-            localpred = prediction[i, maskidx, :]
-            guesstok = tf.argmax(localpred)
-            guess_pred = localpred[guesstok]
-            true_pred = localpred[masktok]
+            maskindices = [i for (i, val) in enumerate(localmask.numpy()) if val > 0]
 
             logger.info('{:<15}: {}'.format("Input", sentence))
             logger.info('{:<15}: {}'.format("Tokens", tokens[i].numpy()))
-            logger.info('{:<15}: {}'.format("Mask Index", maskidx))
-            logger.info('{:<15}: {}'.format("Mask Token", masktok))
-            logger.info('{:<15}: {}'.format("Mask Pred %", true_pred))
-            logger.info('{:<15}: {}'.format("Pred Token", guesstok))
-            logger.info('{:<15}: {}'.format("Pred %", guess_pred))
+
+            for j, maskidx in enumerate(maskindices):
+                masktok = localmask[maskidx]
+                localpred = prediction[i, maskidx, :]
+                guesstok = tf.argmax(localpred)
+                guess_pred = localpred[guesstok]
+                true_pred = localpred[masktok]
+
+                logger.info('{:<15}({}): {}'.format("Mask Index", j, maskidx))
+                logger.info('{:<15}({}): {}'.format("Mask Token", j, masktok))
+                logger.info('{:<15}({}): {}'.format("Mask Pred %", j, true_pred))
+                logger.info('{:<15}({}): {}'.format("Pred Token", j, guesstok))
+                logger.info('{:<15}({}): {}'.format("Pred %", j, guess_pred))
     return tester
 
 NAN_LOSS_ERR_CODE = 1

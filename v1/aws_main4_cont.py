@@ -13,7 +13,7 @@ import tensorflow as tf
 import boto3
 
 # business logic
-from ps_pretrain_mlm_15p import main
+from ps_pretrain_mlm_15p import PretrainerPipeline
 
 # local packages
 import aws_common.init as init
@@ -44,10 +44,12 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    main(logger, OUTDIR,
-        in_model_dir='configs/berte_pretrain_mlm_15p',
+    PretrainerPipeline(logger, OUTDIR).e2e(
+        nepochs=4,
+        in_model_dir='export/berte_pretrain_mlm_15p',
         ckpt_id='train_15p_ps_cont',
         model_id='berte_pretrain_mlm_15p_cont',
-        ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'))
+        ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'),
+        optimizer_it=269150)
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])
