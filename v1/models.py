@@ -4,10 +4,12 @@ This module includes berte v1 specific models
 """
 
 import os
+import json
 import functools
 
 import sentencepiece as sp
 import tensorflow as tf
+import tensorflow_text as text
 
 import common.berts as berts
 
@@ -236,70 +238,84 @@ class Predictor(tf.keras.Model):
     def from_config(cls, config):
         return cls(**config)
 
-class PretrainerMLMMetadataBuilder:
-    """ build mlm pretrainer module metadata """
-    def __init__(self):
-        self.metadata = dict()
+class BerteMetadata:
+    """ model just for saving metadata """
+    @staticmethod
+    def load(model_dir, optimizer):
+        """ load BerteMetadata from model directory """
+        with open(model_dir, 'r') as file:
+            revived_obj = json.loads(file.read())
+        optimizer.iterations.assign(revived_obj['optimizer_iter'])
+        return BerteMetadata("",
+            optimizer_iter=optimizer.iterations,
+            args={
+                'sep': revived_obj['sep'],
+                'mask': revived_obj['mask'],
+                'unk': revived_obj['unk'],
+                'bos': revived_obj['bos'],
+                'eos': revived_obj['eos'],
+                'pad': revived_obj['pad'],
+            })
 
-    def tokenizer_meta(self, tokenizer_filename):
-        """ set tokenizer metadata """
-        tmp_sp = sp.SentencePieceProcessor()
-        tmp_sp.load(tokenizer_filename)
+    def __init__(self, tokenizer_filename, optimizer_iter=0, args=None):
+        if args is None:
+            tmp_sp = sp.SentencePieceProcessor()
+            tmp_sp.load(tokenizer_filename)
+            self._sep = tmp_sp.piece_to_id('<sep>')
+            self._mask = tmp_sp.piece_to_id('<mask>')
+            self._unk = tmp_sp.unk_id()
+            self._bos = tmp_sp.bos_id()
+            self._eos = tmp_sp.eos_id()
+            self._pad = tmp_sp.pad_id()
+        else:
+            self._sep = args['sep']
+            self._mask = args['mask']
+            self._unk = args['unk']
+            self._bos = args['bos']
+            self._eos = args['eos']
+            self._pad = args['pad']
+        self._optimizer_iter = tf.Variable(optimizer_iter, trainable=False)
 
-        return self.\
-            add_metadata(
-                tmp_sp.piece_to_id('<sep>'), 'SEP').\
-            add_metadata(
-                tmp_sp.piece_to_id('<mask>'), 'MASK').\
-            add_metadata(tmp_sp.unk_id(), 'UNK').\
-            add_metadata(tmp_sp.bos_id(), 'BOS').\
-            add_metadata(tmp_sp.eos_id(), 'EOS').\
-            add_metadata(tmp_sp.pad_id(), 'PAD')
+    def optimizer_iteration(self):
+        return self._optimizer_iter
 
-    def optimizer_iter(self, value):
-        """ add optimizer init """
-        return self.add_metadata(value, 'optimizer_init')
+    def pad(self):
+        return self._pad
 
-    def add_metadata(self, value, key):
-        """ add custom metadata """
-        self.metadata[key] = value
-        return self
-
-    def build(self):
-        """ return built metadata """
-        return self.metadata
-
-PRETRAINER_MLM_ARGS = [
-    "preprocessor",
-    "perceiver",
-    "latenter",
-    "mask_pred",
-]
-
-class PretrainerMLMInitBuilder:
-    """ build mlm pretrainer module init arguments """
-    def __init__(self):
-        self.arg = dict()
-        for key in PRETRAINER_MLM_ARGS:
-            setattr(self.__class__, key, functools.partial(self.add_arg, key=key))
-
-    def add_arg(self, value, key):
-        """ add custom arg """
-        self.arg[key] = value
-        return self
-
-    def build(self):
-        """ return built arg """
-        return self.arg
+    def save(self, model_dir):
+        json_obj = {
+            'sep': int(self._sep),
+            'mask': int(self._mask),
+            'unk': int(self._unk),
+            'bos': int(self._bos),
+            'eos': int(self._eos),
+            'pad': int(self._pad),
+            'optimizer_iter': int(self._optimizer_iter.numpy()),
+        }
+        with open(model_dir, 'w') as file:
+            json.dump(json_obj, file)
 
 class PretrainerMLM(tf.Module):
     """
     Collection of models used in pretrainining using Masked Language Modeling.
     """
     @staticmethod
-    def load(tokenizer, metadata, model_path):
-        args = dict([(model_key, tf.keras.models.load_model(os.path.join(model_path, model_key)))
-            for model_key in ['preprocessor', 'perceiver', 'latenter', 'mask_pred']])
+    def load(model_path, optimizer, tokenizer_filename, tokenizer_setup):
+        """ load PretrainerMLM from tokenizer_filename and parameters under model_path """
+        with open(tokenizer_filename, 'rb') as file:
+            tokenizer = text.SentencepieceTokenizer(model=file.read(),
+                                                    out_type=tf.int32,
+                                                    add_bos=tokenizer_setup["add_bos"],
+                                                    add_eos=tokenizer_setup["add_eos"])
+
+        metadata_path = os.path.join(model_path, 'metadata')
+        if os.path.exists(metadata_path):
+            metadata = BerteMetadata.load(metadata_path, optimizer)
+        else:
+            metadata = BerteMetadata(tokenizer_filename, optimizer.iterations)
+
+        args = {model_key:tf.keras.models.load_model(os.path.join(model_path, model_key))
+            for model_key in ['preprocessor', 'perceiver', 'latenter', 'mask_pred']}
         return PretrainerMLM(tokenizer, None, metadata, args=args)
 
     def __init__(self, tokenizer, params, metadata, args=None):
@@ -323,6 +339,7 @@ class PretrainerMLM(tf.Module):
         if not os.path.exists(model_path):
             os.mkdir(model_path)
 
+        self.metadata.save(os.path.join(model_path, 'metadata'))
         self.preprocessor.save(os.path.join(model_path, 'preprocessor'))
         self.perceiver.save(os.path.join(model_path, 'perceiver'))
         self.latenter.save(os.path.join(model_path, 'latenter'))

@@ -40,7 +40,7 @@ def build_tester(action_module, samples, mask_sizes, logger):
     tokens = action_module.tokenize(sentences)
     lengths = np.array([len(token) for token in tokens.numpy()])
     _, masked_tokens, masked = mask_lm(tokens, lengths, 0.1,
-        pad=action_module.metadata["PAD"], ds_width=mask_sizes[1])
+        pad=action_module.metadata.pad(), ds_width=mask_sizes[1])
 
     def tester():
         prediction, _ = action_module.mask_prediction(masked_tokens, training=False)
@@ -87,7 +87,7 @@ def build_pretrainer(action_module, optimizer, ds_width, skip_loss):
             prediction, debug_info2 = action_module.mask_prediction(source,
                 latent_pred=lat, training=True)
             loss, debug_info3 = training.loss_function(target, prediction,
-                pad=action_module.metadata["PAD"])
+                pad=action_module.metadata.pad())
             debug_info['loss'] = loss
             debug_info.update(debug_info2)
             debug_info.update(debug_info3)
@@ -114,7 +114,7 @@ def build_pretrainer(action_module, optimizer, ds_width, skip_loss):
         with tf.GradientTape() as tape:
             prediction, debug_info = action_module.mask_prediction(source, training=True)
             loss, debug_info2 = training.loss_function(target, prediction,
-                    pad=action_module.metadata["PAD"])
+                    pad=action_module.metadata.pad())
             debug_info['loss'] = loss
             debug_info.update(debug_info2)
             trainable_vars = action_module.uncontexted_trainable_variables()
@@ -133,7 +133,7 @@ def build_pretrainer(action_module, optimizer, ds_width, skip_loss):
 
     def pretrainer(batch, lengths, prev_loss, mask_rate, context_rate):
         orig, source, target = mask_lm(batch, lengths, mask_rate,
-            pad=action_module.metadata["PAD"], ds_width=ds_width)
+            pad=action_module.metadata.pad(), ds_width=ds_width)
         target = tf.cast(target, tf.int64)
         if np.random.rand() < context_rate:
             return contexted_persentence_mlm_pretrain(orig, source, target, prev_loss)
@@ -193,10 +193,12 @@ class EpochPretrainer:
         return self.prev_losses(default_value=default_value,
                 stdev_coeff=self.args["training_settings"]["skip_bad_loss"]["stdev_coeff"])
 
-    def run_epoch(self, skip_shards=None, logger=None, nan_reporter=None):
+    def run_epoch(self, skip_shards=None, logger=None, nan_reporter=None, report_metric=None):
         """ run a single epoch """
         if logger is None:
             logger = telemetry.EmptyLogger()
+        if report_metric is None:
+            report_metric = telemetry.get_logger_metric_reporter(logger)
 
         self.training_loss.reset_states()
         self.training_accuracy.reset_states()
@@ -234,11 +236,11 @@ class EpochPretrainer:
                     self.prev_losses.add(loss.numpy())
 
                 if batch % 50 == 0:
-                    logger.info('Batch %d Loss %.4f Accuracy %.4f Skipped %d',
-                            batch,
-                            self.training_loss.result(),
-                            self.training_accuracy.result(),
-                            nskipped)
+                    report_metric(
+                        Batch=batch,
+                        Loss=float(self.training_loss.result().numpy()),
+                        Accuracy=float(self.training_accuracy.result().numpy()),
+                        Skipped=nskipped)
                     nskipped = 0
 
                 batch += 1

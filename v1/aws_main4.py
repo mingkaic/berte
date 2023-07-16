@@ -18,6 +18,7 @@ from ps_pretrain_mlm_15p import PretrainerPipeline
 # local packages
 import aws_common.init as init
 from aws_common.instance import get_instance
+from aws_common.telemetry import get_cloudwatch_metric_reporter
 
 if __name__ == '__main__':
     _instance_info = get_instance()
@@ -45,6 +46,7 @@ if __name__ == '__main__':
         pass
 
     PretrainerPipeline(logger, OUTDIR).e2e(
-        ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'))
+        ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'),
+        report_metric=get_cloudwatch_metric_reporter('berte', 60))
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])

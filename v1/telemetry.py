@@ -34,3 +34,9 @@ def detail_reporter(logger, tokenizer):
             hasnan = np.isnan(debug_val).any()
             logger.error('{}:{} (has nan: {})'.format(debug_key, debug_val, hasnan))
     return _reporter
+
+def get_logger_metric_reporter(logger):
+    """ Return metric report function by calling logger.info against the metric kwargs """
+    def _report_metric(**kwargs):
+        logger.info(' '.join(['{} {}'.format(key, value) for key, value in kwargs.items()]))
+    return _report_metric

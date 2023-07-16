@@ -37,7 +37,7 @@ if __name__ == '__main__':
     CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
     ID = 'test'
     OUTDIR = 'test_out'
-    OPTIMIZER_IT = 260
+    OPTIMIZER_IT = 270
 
     syncer = init.S3BucketSyncer(S3_BUCKET)
     syncer.download_if_notfound('configs',

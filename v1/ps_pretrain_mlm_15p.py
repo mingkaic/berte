@@ -77,18 +77,17 @@ class PretrainerPipeline:
         if ckpt_options is None:
             ckpt_options = tf.train.CheckpointOptions()
 
-        with open(self.tokenizer_filename, 'rb') as file:
-            tokenizer = text.SentencepieceTokenizer(model=file.read(),
-                                                    out_type=tf.int32,
-                                                    add_bos=self.tokenizer_setup["add_bos"],
-                                                    add_eos=self.tokenizer_setup["add_eos"])
-
-        metadata = models.PretrainerMLMMetadataBuilder().\
-            tokenizer_meta(self.tokenizer_filename).\
-            optimizer_iter(optimizer.iterations).build()
         if in_model_dir is not None:
-            pretrainer = models.PretrainerMLM.load(tokenizer, metadata, in_model_dir)
+            self.logger.info('Model recovered from %s', in_model_dir)
+            pretrainer = models.PretrainerMLM.load(in_model_dir, optimizer,
+                    self.tokenizer_filename, self.tokenizer_setup)
         else:
+            with open(self.tokenizer_filename, 'rb') as file:
+                tokenizer = text.SentencepieceTokenizer(model=file.read(),
+                                                        out_type=tf.int32,
+                                                        add_bos=self.tokenizer_setup["add_bos"],
+                                                        add_eos=self.tokenizer_setup["add_eos"])
+            metadata = models.BerteMetadata(self.tokenizer_filename, optimizer.iterations)
             builder = models.InitParamBuilder()
             _args = dict(self.cached_args)
             _args.update(self.model_args)
@@ -120,7 +119,8 @@ class PretrainerPipeline:
             ckpt_options=None,
             skip_shards=None,
             skip_loss=True,
-            optimizer_it=0):
+            optimizer_it=0,
+            report_metric=None):
         """ actually pretrains some model """
 
         # models
@@ -183,7 +183,8 @@ class PretrainerPipeline:
         for epoch in range(nepochs):
             start = time.time()
             sublogger = telemetry.PrefixAdapter(self.logger, 'Epoch {}'.format(epoch+1))
-            trainer.run_epoch(skip_shards, logger=sublogger, nan_reporter=nan_reporter)
+            trainer.run_epoch(skip_shards, logger=sublogger, nan_reporter=nan_reporter,
+                report_metric=report_metric)
 
             if (epoch + 1) % self.training_settings["epochs_per_save"] == 0:
                 self.logger.info('Saving checkpoint for epoch %d at %s',
