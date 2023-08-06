@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-This runs 4_persentence_pretrain_mlm_15p.ipynb in an AWS instance
+This runs 5_simple_pretrain_mlm.ipynb in an AWS instance
 """
 # standard packages
 import logging
@@ -13,7 +13,7 @@ import tensorflow as tf
 import boto3
 
 # business logic
-from ps_pretrain_mlm_15p import PretrainerPipeline
+from pretrain_mlm import PretrainerPipeline
 
 # local packages
 import aws_common.init as init
@@ -28,7 +28,7 @@ if __name__ == '__main__':
     S3_BUCKET = 'bidi-enc-rep-trnsformers-everywhere'
     S3_DIR = 'v1/pretraining'
     CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
-    ID = '4_persentence_pretrain_mlm_15p'
+    ID = '5_pretrain_mlm'
     OUTDIR = 'out'
 
     syncer = init.S3BucketSyncer(S3_BUCKET)
@@ -36,6 +36,8 @@ if __name__ == '__main__':
             os.path.join(S3_DIR, ID, 's3_configs.tar.gz'))
     syncer.download_if_notfound('export',
             os.path.join(S3_DIR, ID, 's3_export.tar.gz'))
+    syncer.download_if_notfound('intake',
+            os.path.join(S3_DIR, ID, 's3_intake.tar.gz'))
 
     logger = init.create_logger(ID, CLOUDWATCH_GROUP, EC2_REGION)
 
@@ -47,11 +49,10 @@ if __name__ == '__main__':
 
     PretrainerPipeline(logger, OUTDIR).e2e(
         nepochs=5,
-        in_model_dir='export/berte_pretrain_mlm_15p',
-        ckpt_id='train_15p_ps_cont',
-        model_id='berte_pretrain_mlm_15p_cont',
+        in_model_dir='intake/simpl_berte_pretrain_mlm',
+        ckpt_id='berte_pretrain',
+        model_id='berte_pretrain_mlm',
         ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'),
-        report_metric=get_cloudwatch_metric_reporter('berte', 60),
-        optimizer_it=269150)
+        report_metric=get_cloudwatch_metric_reporter('berte', 60))
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])

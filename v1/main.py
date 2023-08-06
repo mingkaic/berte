@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-This runs 4_persentence_pretrain_mlm_15p.ipynb in an AWS instance
+This runs pretrain_mlm.ipynb in an AWS instance
 """
 # standard packages
 import logging
@@ -13,7 +13,7 @@ import tensorflow as tf
 import boto3
 
 # business logic
-from ps_pretrain_mlm_15p import PretrainerPipeline
+from pretrain_mlm import PretrainerPipeline
 
 # local packages
 import aws_common.init as init
@@ -28,7 +28,7 @@ if __name__ == '__main__':
     S3_BUCKET = 'bidi-enc-rep-trnsformers-everywhere'
     S3_DIR = 'v1/pretraining'
     CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
-    ID = '4_persentence_pretrain_mlm_15p'
+    ID = '5_pretrain_mlm'
     OUTDIR = 'out'
 
     syncer = init.S3BucketSyncer(S3_BUCKET)
@@ -46,6 +46,7 @@ if __name__ == '__main__':
         pass
 
     PretrainerPipeline(logger, OUTDIR).e2e(
+        nepochs=5,
         ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'),
         report_metric=get_cloudwatch_metric_reporter('berte', 60))
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')

@@ -1,0 +1,4 @@
+dataset: "intake/persentence_dataset"
+tokenizer_args:
+    add_bos: True
+    add_eos: True

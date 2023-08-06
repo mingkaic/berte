@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-This module defines 4_persentence_pretrain_mlm_15p.ipynb logic
+This module defines pretrain_mlm.ipynb logic with dataset
 """
 # standard packages
 import time
@@ -14,17 +14,12 @@ import tensorflow_text as text
 import tensorflow as tf
 
 # local packages
-import models
 import dataset
-import traintest
-import telemetry
+import pretrain_epoch
+import common.telemetry as telemetry
 import common.training as training
-
-# allow at most 50 bad batches per 100 batch, recover 10 quota afterwards
-QUOTA_BUCKET_CAPACITY = 50
-QUOTA_BUCKET_RECOVER = 10
-QUOTA_BUCKET_RECOVER_RATE = 50
-SKIP_LOSS_WINDOW = 200
+import intake.mlm as mlm
+import intake.model as model
 
 def _setup_cached_args(tokenizer_filename, tokenizer_setup, dataset_path):
     with open(tokenizer_filename, 'rb') as file:
@@ -46,27 +41,25 @@ class PretrainerPipeline:
         self.outdir = outdir
 
         # --------- Extract configs and cached values ---------
-        with open("configs/pretrain_1.yaml") as file:
+        with open("configs/pretrain.yaml") as file:
             _args = yaml.safe_load(file.read())
             self.tokenizer_filename = _args["tokenizer_model"]
             self.training_args = _args["training_args"]
             self.model_args = _args["model_args"]
             self.training_settings = _args["training_settings"]
-        with open("configs/ps_dataset_1.yaml") as file:
+        with open("configs/ps_dataset.yaml") as file:
             _args = yaml.safe_load(file.read())
             self.dataset_path = _args["dataset"]
-            self.dataset_shard_dirpath = _args["shard_directory"]
             self.tokenizer_setup = _args["tokenizer_args"]
         self.cached_args = _setup_cached_args(
             self.tokenizer_filename, self.tokenizer_setup, self.dataset_path)
 
-    def setup_optimizer(self, optimizer_it):
+    def setup_optimizer(self):
         """ create and initialize optimizer """
 
         learning_rate = training.CustomSchedule(self.model_args["model_dim"])
         optimizer = tf.keras.optimizers.legacy.Adam(learning_rate,
                 beta_1=0.9, beta_2=0.98, epsilon=1e-9)
-        optimizer.iterations.assign(optimizer_it)
         return optimizer
 
     def setup_pretrainer(self, optimizer, ckpt_id,
@@ -79,7 +72,7 @@ class PretrainerPipeline:
 
         if in_model_dir is not None:
             self.logger.info('Model recovered from %s', in_model_dir)
-            pretrainer = models.PretrainerMLM.load(in_model_dir, optimizer,
+            pretrainer = model.SimplePretrainerMLM.load(in_model_dir, optimizer,
                     self.tokenizer_filename, self.tokenizer_setup)
         else:
             with open(self.tokenizer_filename, 'rb') as file:
@@ -87,13 +80,13 @@ class PretrainerPipeline:
                                                         out_type=tf.int32,
                                                         add_bos=self.tokenizer_setup["add_bos"],
                                                         add_eos=self.tokenizer_setup["add_eos"])
-            metadata = models.BerteMetadata(self.tokenizer_filename, optimizer.iterations)
-            builder = models.InitParamBuilder()
+            metadata = model.BerteMetadata(self.tokenizer_filename, optimizer.iterations)
+            builder = model.InitParamBuilder()
             _args = dict(self.cached_args)
             _args.update(self.model_args)
             for key in _args:
                 builder.add_param(_args[key], key)
-            pretrainer = models.PretrainerMLM(
+            pretrainer = model.SimplePretrainerMLM(
                 tokenizer=tokenizer,
                 params=builder.build(),
                 metadata=metadata)
@@ -112,24 +105,22 @@ class PretrainerPipeline:
     def e2e(self,
             nepochs=1,
             in_model_dir=None,
-            ckpt_id='train_15p_ps',
-            model_id='berte_pretrain_mlm_15p',
+            ckpt_id='berte_pretrain',
+            model_id='berte_pretrain_mlm',
             training_preprocessing=None,
-            context_rate_overwrite=None,
             ckpt_options=None,
-            skip_shards=None,
-            skip_loss=True,
-            optimizer_it=0,
             report_metric=None):
         """ actually pretrains some model """
 
         # models
-        optimizer = self.setup_optimizer(optimizer_it)
+        optimizer = self.setup_optimizer()
         pretrainer, ckpt_manager = self.setup_pretrainer(optimizer, ckpt_id,
                 ckpt_options, in_model_dir)
+        self.logger.info('Beginning training with optimizer iteration=%d',
+            optimizer.iterations.numpy())
 
         # testing
-        run_test = traintest.build_tester(pretrainer,
+        run_test = mlm.build_tester(pretrainer,
                 samples=[
                     "este é um problema que temos que resolver.",
                     "this is a problem we have to solve .",
@@ -146,44 +137,31 @@ class PretrainerPipeline:
                 logger=self.logger)
 
         # dataset
-        training_shards, _ = dataset.setup_shards(self.dataset_shard_dirpath, self.training_args,
+        training_batches = dataset.setup_dataset(self.dataset_path, self.training_args,
                 pretrainer.tokenizer, logger=self.logger)
         if training_preprocessing is not None:
-            training_shards = training_preprocessing(training_shards)
+            training_batches = training_preprocessing(training_batches)
 
         # training
-        train_batch, train_loss, train_accuracy = traintest.build_pretrainer(
-                pretrainer, optimizer, self.cached_args["dataset_width"], skip_loss)
+        train_batch, train_loss, train_accuracy = mlm.build_pretrainer(
+                pretrainer, optimizer, self.cached_args["dataset_width"])
 
-        bucket = training.QuotaBucket(self.training_settings["skip_bad_loss"]["warmup"],
-                                      bucket_capacity=QUOTA_BUCKET_CAPACITY,
-                                      bucket_recover=QUOTA_BUCKET_RECOVER,
-                                      bucket_recover_rate=QUOTA_BUCKET_RECOVER_RATE)
-        prev_losses = training.LossWindow(capacity=SKIP_LOSS_WINDOW)
-        nan_reporter = telemetry.detail_reporter(self.logger, pretrainer.tokenizer)
-        if context_rate_overwrite is not None:
-            context_rate = context_rate_overwrite
-        else:
-            context_rate = self.training_args["context_rate"]
-        trainer = traintest.EpochPretrainer(
-            traintest.EpochPretrainerInitBuilder().\
+        nan_reporter = telemetry.detail_reporter(self.logger)
+        trainer = pretrain_epoch.EpochPretrainer(
+            pretrain_epoch.EpochPretrainerInitBuilder().\
                 training_settings(self.training_settings).\
                 training_loss(train_loss).\
                 training_accuracy(train_accuracy).\
-                training_shards(training_shards).\
-                training_cb(lambda batch, lengths, loss_check: train_batch(
-                    batch, lengths, loss_check,
-                    mask_rate=self.training_args["mask_rate"],
-                    context_rate=context_rate)).\
-                ckpt_save_cb(lambda _: ckpt_manager.save(options=ckpt_options)).\
-                bucket(bucket).\
-                prev_losses(prev_losses).build())
+                training_batches(training_batches).\
+                training_cb(lambda batch, lengths: train_batch(batch, lengths,
+                    mask_rate=self.training_args["mask_rate"])).\
+                ckpt_save_cb(lambda _: ckpt_manager.save(options=ckpt_options)).build())
 
         # --------- Training ---------
         for epoch in range(nepochs):
             start = time.time()
             sublogger = telemetry.PrefixAdapter(self.logger, 'Epoch {}'.format(epoch+1))
-            trainer.run_epoch(skip_shards, logger=sublogger, nan_reporter=nan_reporter,
+            trainer.run_epoch(logger=sublogger, nan_reporter=nan_reporter,
                 report_metric=report_metric)
 
             if (epoch + 1) % self.training_settings["epochs_per_save"] == 0:
@@ -202,7 +180,7 @@ class PretrainerPipeline:
 
 if __name__ == '__main__':
     # local logging
-    logging.basicConfig(filename="tmp/4_persentence_pretrain_mlm_15p.log",
+    logging.basicConfig(filename="tmp/pretrain_mlm.log",
                         format='%(asctime)s %(message)s',
                         filemode='w')
     _logger = logging.getLogger()

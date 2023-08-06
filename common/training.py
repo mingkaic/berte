@@ -122,18 +122,15 @@ def loss_function(real, pred, pad=0):
     common loss function used when training
     """
 
-    mask = tf.math.logical_not(tf.math.equal(real, tf.cast(pad, real.dtype)))
     initloss = loss_object(real, pred)
+    mask = tf.cast(tf.math.not_equal(real, tf.cast(pad, real.dtype)), initloss.dtype)
 
-    mask = tf.cast(mask, initloss.dtype)
     loss = initloss * mask
-
     debug_info = {
         'real': real,
         'initloss': initloss,
         'loss': loss,
     }
-
     return tf.reduce_sum(loss)/tf.reduce_sum(mask), debug_info
 
 def accuracy_function(real, pred, pred_axis=2):

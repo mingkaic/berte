@@ -17,7 +17,7 @@ source ~/.bashrc
 conda install -c conda-forge -y cudatoolkit=11.8.0
 
 # download deployment
-aws s3api get-object --bucket bidi-enc-rep-trnsformers-everywhere --key v1/pretraining/4_persentence_pretrain_mlm_15p/ec2_deployment.tar.gz ec2_deployment.tar.gz
+aws s3api get-object --bucket bidi-enc-rep-trnsformers-everywhere --key v1/pretraining/5_pretrain_mlm/ec2_deployment.tar.gz ec2_deployment.tar.gz
 tar -xf ec2_deployment.tar.gz
 
 # download python requirements
