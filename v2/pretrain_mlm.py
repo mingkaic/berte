@@ -16,10 +16,13 @@ import tensorflow as tf
 # local packages
 import dataset
 import pretrain_epoch
+
+import export.mlm as mlm
+import export.model as model
+
 import common.telemetry as telemetry
 import common.training as training
-import intake.mlm as mlm
-import intake.model as model
+from common.cache import cache_values
 
 def _setup_cached_args(tokenizer_filename, tokenizer_setup, dataset_path):
     with open(tokenizer_filename, 'rb') as file:
@@ -28,7 +31,7 @@ def _setup_cached_args(tokenizer_filename, tokenizer_setup, dataset_path):
                                                 add_bos=tokenizer_setup["add_bos"],
                                                 add_eos=tokenizer_setup["add_eos"])
     # generate or retrieve cached values
-    return dataset.cache_values("configs/pretrain_cache.yaml", {
+    return cache_values("configs/pretrain_cache.yaml", {
         "dataset_width": dataset.generate_dataset_width,
         "vocab_size": lambda _, tokenizer: int(tokenizer.vocab_size().numpy()),
     }, dataset_path, tokenizer)

@@ -1,0 +1,4 @@
+dataset: "intake/raw_wiki_dataset"
+tokenizer_args:
+    add_bos: True
+    add_eos: True

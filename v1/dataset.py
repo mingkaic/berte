@@ -34,28 +34,6 @@ def setup_shards(shard_dirpath, training_args, tokenizer, logger=None):
 
     return training_shards, training_keys
 
-def cache_values(cache_file, generators, *args, **kwargs):
-    """
-    read from cache_file if it exist and populate missing arguments from generators with args
-    """
-    cached_args = dict()
-    try:
-        with open(cache_file, "r") as file:
-            args = yaml.safe_load(file.read())
-            if args is not None:
-                cached_args = args
-    except FileNotFoundError:
-        pass
-
-    for key in generators:
-        if key not in cached_args:
-            cached_args[key] = generators[key](*args, **kwargs)
-
-    with open(cache_file, "w") as file:
-        file.write(yaml.dump(cached_args))
-
-    return cached_args
-
 def generate_dataset_width(dataset_path, tokenizer):
     """ looks up the maximum tokens length possible in the dataset """
     all_batches = tf.data.experimental.load(dataset_path)

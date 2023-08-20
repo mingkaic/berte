@@ -4,11 +4,13 @@ This module defines nextsentence dataset preparation.
 """
 import numpy as np
 
+import tensorflow as tf
+
 def class_reducer(sentence_distance):
     """
     class_reducer converts the distance to the desired predictor class.
     """
-    return 1 / (sentence_distance + 1)
+    return 1 / tf.cast(sentence_distance, tf.float32)
 
 def choose_second_sentence(nwindow, index):
     """

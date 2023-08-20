@@ -3,23 +3,31 @@
 This module sets up training dataset
 """
 
-import yaml
-
 import tensorflow as tf
 
 def setup_dataset(dataset_dirpath, training_args, tokenizer, logger=None):
     """ convert all the shards in directory path to datasets """
 
-    def batch_process(sentences, lengths):
-        return tokenizer.tokenize(sentences).to_tensor(), lengths
-
     try:
-        dataset = (tf.data.experimental.load(dataset_dirpath)
-                                       .cache()
-                                       .shuffle(training_args["buffer_size"])
-                                       .batch(training_args["batch_size"])
-                                       .map(batch_process)
-                                       .prefetch(tf.data.AUTOTUNE))
+        dataset = tf.data.experimental.load(dataset_dirpath)
+        def gen():
+            for sentences in dataset:
+                toks = tokenizer.tokenize(sentences)
+                yield sentences, toks.shape[0]
+
+        def batch_process(sentences, length):
+            return tokenizer.tokenize(sentences).to_tensor(), length
+
+        return (tf.data.Dataset.from_generator(gen,
+            output_signature=(
+                tf.TensorSpec(shape=(), dtype=tf.string),
+                tf.TensorSpec(shape=(), dtype=tf.int32),
+            ))
+            .cache()
+            .shuffle(training_args["buffer_size"])
+            .batch(training_args["batch_size"])
+            .map(batch_process)
+            .prefetch(tf.data.AUTOTUNE))
     except FileNotFoundError as err:
         if logger is not None:
             logger.error('{} not found: {}'.format(dataset_dirpath, err))
@@ -27,29 +35,7 @@ def setup_dataset(dataset_dirpath, training_args, tokenizer, logger=None):
         if logger is not None:
             logger.error('{} failed: {}'.format(dataset_dirpath, err))
 
-    return dataset
-
-def cache_values(cache_file, generators, *args, **kwargs):
-    """
-    read from cache_file if it exist and populate missing arguments from generators with args
-    """
-    cached_args = dict()
-    try:
-        with open(cache_file, "r") as file:
-            args = yaml.safe_load(file.read())
-            if args is not None:
-                cached_args = args
-    except FileNotFoundError:
-        pass
-
-    for key in generators:
-        if key not in cached_args:
-            cached_args[key] = generators[key](*args, **kwargs)
-
-    with open(cache_file, "w") as file:
-        file.write(yaml.dump(cached_args))
-
-    return cached_args
+    return None
 
 def generate_dataset_width(dataset_path, tokenizer):
     """ looks up the maximum tokens length possible in the dataset """

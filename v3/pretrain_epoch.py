@@ -53,8 +53,8 @@ class EpochPretrainer:
 
         self.training_loss.reset_states()
         self.training_accuracy.reset_states()
-        for i, (tokens, lengths) in enumerate(self.training_batches):
-            debug_info, err_code = self.args["training_cb"](tokens, lengths)
+        for i, windows in enumerate(self.training_batches):
+            debug_info, err_code = self.args["training_cb"](windows)
             if err_code != 0:
                 if err_code == NAN_LOSS_ERR_CODE:
                     if nan_reporter is not None:

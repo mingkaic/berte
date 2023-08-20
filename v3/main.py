@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-This runs pretrain_mlm.ipynb in an AWS instance
+This runs pretrain_nsp.ipynb in an AWS instance
 """
 # standard packages
 import logging
@@ -22,7 +22,7 @@ INSTANCE_ID = _instance_info['instance_id']
 EC2_REGION = _instance_info['ec2_region']
 
 S3_BUCKET = 'bidi-enc-rep-trnsformers-everywhere'
-S3_DIR = 'v2'
+S3_DIR = 'v3'
 CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
 ID = 'pretraining'
 OUTDIR = 'out'
@@ -36,7 +36,7 @@ syncer.download_if_notfound('intake',
         os.path.join(S3_DIR, ID, 's3_intake.tar.gz'))
 
 # business logic
-from pretrain_mlm import PretrainerPipeline
+from pretrain_nsp import PretrainerPipeline
 
 if __name__ == '__main__':
     logger = init.create_logger(ID, CLOUDWATCH_GROUP, EC2_REGION)
@@ -48,10 +48,10 @@ if __name__ == '__main__':
         pass
 
     PretrainerPipeline(logger, OUTDIR).e2e(
-        nepochs=5,
-        in_model_dir='intake/simpl_berte_pretrain_mlm',
+        nepochs=10,
+        in_model_dir='intake/berte_pretrain_mlm',
         ckpt_id='berte_pretrain',
-        model_id='berte_pretrain_mlm',
+        model_id='berte_pretrain',
         ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'),
         report_metric=get_cloudwatch_metric_reporter('berte', 60))
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')

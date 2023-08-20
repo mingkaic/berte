@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-This tests pretrain_mlm.ipynb locally
+This tests pretrain_nsp.ipynb locally
 """
 # standard packages
 import os
@@ -10,7 +10,7 @@ import shutil
 import psutil
 
 # business logic
-from pretrain_mlm import PretrainerPipeline
+from pretrain_nsp import PretrainerPipeline
 
 def shorten_ds(training_ds):
     """ take 36 from the dataset """
@@ -19,11 +19,11 @@ def shorten_ds(training_ds):
 if __name__ == '__main__':
     ID = 'test'
     OUTDIR = 'tmp'
-    MODEL_DIR = 'intake/simpl_berte_pretrain_mlm'
+    MODEL_DIR = 'intake/berte_pretrain_mlm'
 
     process = psutil.Process()
     print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
-    logging.basicConfig(filename="tmp/pretrain_mlm.log",
+    logging.basicConfig(filename="tmp/pretrain.log",
                         format='%(asctime)s %(message)s',
                         filemode='w')
     logger = logging.getLogger()

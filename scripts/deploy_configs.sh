@@ -16,11 +16,17 @@ mkdir -p "$TARGET";
 pushd $SOURCE_CODE;
 tar -cvzf "$TARGET/s3_configs.tar.gz" configs;
 tar -cvzf "$TARGET/s3_export.tar.gz" "export";
+if [ -d intake ]; then
+	tar -hcvzf "$TARGET/s3_intake.tar.gz" intake;
+fi
 popd;
 
 ## upload to S3
 aws s3 cp "$TARGET/s3_configs.tar.gz" "$S3_DIR/s3_configs.tar.gz";
 aws s3 cp "$TARGET/s3_export.tar.gz" "$S3_DIR/s3_export.tar.gz";
+if [ -f "$TARGET/s3_intake.tar.gz" ]; then
+	aws s3 cp "$TARGET/s3_intake.tar.gz" "$S3_DIR/s3_intake.tar.gz";
+fi
 
 # clean up
 rm -rf "$TARGET";
