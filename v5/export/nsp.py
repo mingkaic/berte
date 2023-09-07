@@ -31,14 +31,15 @@ def select_sentence_pairs(action_module, windows):
         for toks in tokens])
     return results, firsts, seconds
 
-def build_tester(action_module, paragraph, logger):
+def build_tester(preprocessor, action_module, paragraph, logger):
     """ build_tester returns a callable that tests the samples """
     tokens = action_module.tokenize(paragraph)
     tokens, firsts, seconds = select_sentence_pairs(
             action_module, tf.stack([paragraph] * 15))
+    enc, latent = preprocessor.preprocess(tokens, training=False)
 
     def tester():
-        labels, _ = action_module.ns_prediction(tokens, training=False)
+        labels, _ = action_module.ns_prediction(enc, latent, training=False)
         for first, second, tok, label in zip(firsts, seconds, tokens.numpy(), labels.numpy()):
             dist = abs(first - second)
             label_class = ns.class_reducer(dist)
@@ -53,7 +54,7 @@ def build_tester(action_module, paragraph, logger):
 
 mse = tf.keras.losses.MeanSquaredError()
 
-def build_pretrainer(action_module, optimizer):
+def build_pretrainer(preprocessor, action_module, optimizer):
     """ build_trainer returns a callable that trains a bunch of minibatch """
     train_loss = tf.keras.metrics.Mean(name='train_loss')
 
@@ -62,10 +63,14 @@ def build_pretrainer(action_module, optimizer):
         tf.TensorSpec(shape=(None), dtype=tf.float32),
     ])
     def pretrain(source, target):
+        enc, latent, debug_info = preprocessor.preprocess(source, training=False)
+
         with tf.GradientTape() as tape:
-            prediction, debug_info = action_module.ns_prediction(source, training=True)
+            prediction, debug_info2 = action_module.ns_prediction(enc, latent, training=True)
             loss = mse(target, prediction)
+
             debug_info['loss'] = loss
+            debug_info.update(debug_info2)
 
             gradients = tape.gradient(loss, action_module.trainable_variables)
 

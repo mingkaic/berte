@@ -38,4 +38,5 @@ if __name__ == '__main__':
             training_preprocessing=shorten_ds)
     print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
 
-    shutil.rmtree(os.path.join(OUTDIR, 'checkpoints', ID)) # remove checkpoints
+    shutil.rmtree(os.path.join(OUTDIR, 'checkpoints')) # remove checkpoints
+    shutil.rmtree(os.path.join(OUTDIR, ID)) # remove output model

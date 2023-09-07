@@ -12,7 +12,6 @@ import common.telemetry as telemetry
 EPOCH_PRETRAINER_ARGS = [
     "training_settings",
     "training_loss",
-    "training_accuracy",
     "training_batches",
     "training_cb",
     "ckpt_save_cb",
@@ -42,7 +41,6 @@ class EpochPretrainer:
         self.training_batches = args["training_batches"]
 
         self.training_loss = args["training_loss"]
-        self.training_accuracy = args["training_accuracy"]
 
     def run_epoch(self, logger=None, nan_reporter=None, report_metric=None):
         """ run a single epoch """
@@ -52,7 +50,6 @@ class EpochPretrainer:
             report_metric = telemetry.get_logger_metric_reporter(logger)
 
         self.training_loss.reset_states()
-        self.training_accuracy.reset_states()
         for i, windows in enumerate(self.training_batches):
             debug_info, err_code = self.args["training_cb"](windows)
             if err_code != 0:
@@ -66,5 +63,4 @@ class EpochPretrainer:
             if i % 50 == 0:
                 report_metric(
                         Batch=i,
-                        Loss=float(self.training_loss.result().numpy()),
-                        Accuracy=float(self.training_accuracy.result().numpy()))
+                        Loss=float(self.training_loss.result().numpy()))

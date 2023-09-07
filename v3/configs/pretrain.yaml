@@ -1,7 +1,7 @@
 tokenizer_model: "intake/berte_pretrain_mlm/tokenizer.model"
 training_args:
     buffer_size: 20000
-    batch_size: 24
+    batch_size: 32
     mask_rate: 0.15
     context_rate: 0.15
     window: 17

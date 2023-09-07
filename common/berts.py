@@ -106,6 +106,19 @@ class Perceiver(tf.keras.layers.Layer):
             enc = perceiver_layer(enc, latent, training=training)
         return enc
 
+    def multi_call(self, enc, latent, training=False, *args):
+        """
+        calls with multiple latents
+        """
+        # enc.shape == (batch_size, ?, ?)
+        # latent.shape == (batch_size, latent_dim, model_dim)
+        for perceiver_layer in self.perceiver_layers:
+            # enc.shape == (batch_size, latent_dim, model_dim)
+            enc = perceiver_layer(enc, latent, training=training)
+            for lat in args:
+                enc = perceiver_layer(enc, lat, training=training)
+        return enc
+
     def get_config(self):
         config = super().get_config()
         config.update({
