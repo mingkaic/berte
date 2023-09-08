@@ -14,11 +14,11 @@ import tensorflow_text as text
 import tensorflow as tf
 
 # local packages
-import dataset
-
+import export.dataset as dataset
 import export.nsp as nsp
-import export.model3 as model
+import export.model5 as model
 from export.mlm import NAN_LOSS_ERR_CODE
+from export.model import InitParamBuilder
 
 import common.telemetry as telemetry
 import common.training as training
@@ -98,6 +98,7 @@ class PretrainerPipeline:
             _args = yaml.safe_load(file.read())
             self.tokenizer_setup = _args["tokenizer_args"]
             self.model_args = _args["model_args"]
+            self.preprocessor_dir = _args["preprocessor"]
         with open("configs/nsp_dataset.yaml") as file:
             _args = yaml.safe_load(file.read())
             self.dataset_path = _args["path"]
@@ -112,7 +113,9 @@ class PretrainerPipeline:
                 beta_1=0.9, beta_2=0.98, epsilon=1e-9)
         return optimizer
 
-    def setup_pretrainer(self, ckpt_id, in_model_dir, ckpt_options=None):
+    def setup_pretrainer(self, ckpt_id,
+            in_model_dir = None,
+            ckpt_options=None):
         """ create and initialize pretrainer """
 
         optimizer = self.setup_optimizer()
@@ -120,12 +123,12 @@ class PretrainerPipeline:
             ckpt_options = tf.train.CheckpointOptions()
 
         self.logger.info('Model recovered from %s', in_model_dir)
-        builder = model.InitParamBuilder()
+        builder = InitParamBuilder()
         for key in self.model_args:
             builder.add_param(self.model_args[key], key)
-        preprocessor = model.PretrainerPreprocessor(in_model_dir,
+        preprocessor = model.PretrainerPreprocessor(self.preprocessor_dir,
                 optimizer, builder.build(), self.tokenizer_setup)
-        pretrainer = model.ExtendedPretrainerNSP('', builder.build())
+        pretrainer = model.ExtendedPretrainerNSP(in_model_dir, builder.build())
 
         ckpt = tf.train.Checkpoint(
                 optimizer=optimizer,
@@ -151,7 +154,7 @@ class PretrainerPipeline:
         """ actually pretrains some model """
 
         # models
-        preprocessor, pretrainer, ckpt_manager, optimizer = self.setup_pretrainer(optimizer, ckpt_id, in_model_dir, ckpt_options)
+        preprocessor, pretrainer, ckpt_manager, optimizer = self.setup_pretrainer(ckpt_id, in_model_dir, ckpt_options)
         self.logger.info('Beginning training with optimizer iteration=%d',
             optimizer.iterations.numpy())
 

@@ -10,18 +10,18 @@ import export.mlm as mlm
 
 import common.nextsentence as ns
 
-def select_sentence_pairs(action_module, windows):
+def select_sentence_pairs(preprocessor, windows):
     (batch_size, window_size) = tf.shape(windows).numpy()
 
     firsts = np.random.randint(low=0, high=window_size-1, size=(batch_size))
     seconds = np.array([ns.choose_second_sentence(window_size, first) for first in firsts])
 
-    metadata = action_module.metadata
+    metadata = preprocessor.metadata
     tokens = []
     length = 0
     for first_index, second_index, window in zip(firsts, seconds, windows.numpy()):
-        sentence1 = action_module.tokenizer.tokenize(window[first_index])
-        sentence2 = action_module.tokenizer.tokenize(window[second_index])
+        sentence1 = preprocessor.tokenizer.tokenize(window[first_index])
+        sentence2 = preprocessor.tokenizer.tokenize(window[second_index])
         toks = tf.concat((sentence1, [metadata.sep()], sentence2), axis=0)
         length = max(length, tf.shape(toks)[0].numpy())
         tokens.append(toks)
@@ -33,10 +33,10 @@ def select_sentence_pairs(action_module, windows):
 
 def build_tester(preprocessor, action_module, paragraph, logger):
     """ build_tester returns a callable that tests the samples """
-    tokens = action_module.tokenize(paragraph)
+    tokens = preprocessor.tokenize(paragraph)
     tokens, firsts, seconds = select_sentence_pairs(
-            action_module, tf.stack([paragraph] * 15))
-    enc, latent = preprocessor.preprocess(tokens, training=False)
+            preprocessor, tf.stack([paragraph] * 15))
+    enc, latent, _ = preprocessor.preprocess(tokens, training=False)
 
     def tester():
         labels, _ = action_module.ns_prediction(enc, latent, training=False)
@@ -77,7 +77,7 @@ def build_pretrainer(preprocessor, action_module, optimizer):
         return gradients, loss, debug_info
 
     def _call(windows):
-        batch, firsts, seconds = select_sentence_pairs(action_module, windows)
+        batch, firsts, seconds = select_sentence_pairs(preprocessor, windows)
         distances = abs(firsts - seconds)
         gradients, loss, debug_info = pretrain(batch, ns.class_reducer(distances))
 

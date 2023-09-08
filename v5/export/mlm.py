@@ -45,13 +45,13 @@ def build_tester(preprocessor, action_module, samples, mask_sizes, logger):
     """ build_tester returns a callable that tests the samples """
     n_extras = mask_sizes[0]-len(samples)
     sentences = tf.constant(samples + [""]*n_extras)
-    tokens = action_module.tokenize(sentences)
+    tokens = preprocessor.tokenize(sentences)
     lengths = np.array([len(token) for token in tokens.numpy()])
     _, masked = mask_lm(tokens, lengths, 0.1,
-        pad_id=action_module.metadata.pad(),
-        mask_id=action_module.metadata.mask(),
+        pad_id=preprocessor.metadata.pad(),
+        mask_id=preprocessor.metadata.mask(),
         ds_width=mask_sizes[1])
-    enc, latent = preprocessor.preprocess(masked, training=False)
+    enc, latent, _ = preprocessor.preprocess(masked, training=False)
 
     def tester():
         prediction, _ = action_module.ml_prediction(enc, latent, training=False)
@@ -92,7 +92,7 @@ def build_pretrainer(preprocessor, action_module, optimizer, ds_width):
             prediction, debug_info2 = action_module.ml_prediction(enc, latent, training=True)
             target = tf.cast(target, tf.int64)
             loss, debug_info3 = training.loss_function(target, prediction,
-                    pad=action_module.metadata.pad())
+                    pad=preprocessor.metadata.pad())
 
             debug_info['loss'] = loss
             debug_info.update(debug_info2)
@@ -105,8 +105,8 @@ def build_pretrainer(preprocessor, action_module, optimizer, ds_width):
 
     def _call(batch, lengths, mask_rate):
         batch, masked = mask_lm(batch, lengths, mask_rate,
-                pad_id=action_module.metadata.pad(),
-                mask_id=action_module.metadata.mask(),
+                pad_id=preprocessor.metadata.pad(),
+                mask_id=preprocessor.metadata.mask(),
                 ds_width=ds_width)
         gradients, loss, accuracy, debug_info = pretrain(masked, batch)
 

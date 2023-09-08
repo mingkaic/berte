@@ -1,4 +1,4 @@
-model: "intake/berte_pretrain"
+preprocessor: "intake/berte_pretrain"
 tokenizer_args:
     add_bos: True
     add_eos: True

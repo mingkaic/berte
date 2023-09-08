@@ -7,8 +7,8 @@ import os
 
 import tensorflow as tf
 
-from intake.model import Predictor
-import intake.model3 as model
+from export.model import Predictor, Preprocessor
+import export.model3 as model
 import common.berts as berts
 
 def perceiver_call_param(enc, latent, training=False):
@@ -75,7 +75,7 @@ class PretrainerPreprocessor(CommonPretrainer):
             'metadata': (lambda fpath: model._load_metadata(fpath, model_path, 'nsp', optimizer),
                 save_model),
             'preprocessor': (
-                lambda fpath: load_keras(fpath, model.Preprocessor, params), save_model),
+                lambda fpath: load_keras(fpath, Preprocessor, params), save_model),
         })
 
         self.metadata = self.elems['metadata']
@@ -113,7 +113,7 @@ class ExtendedPretrainerMLM(CommonPretrainer):
         assert isinstance(latent, tf.Tensor)
 
         perception = self.perceiver(enc, latent, training=training)
-        pred, debug_info = self.mask_predictor(perception)
+        pred, debug_info = self.predictor(perception)
         debug_info.update({'ml_prediction.perceiver': perception, 'ml_prediction.pred': pred})
         return (pred, debug_info)
 
@@ -136,6 +136,6 @@ class ExtendedPretrainerNSP(CommonPretrainer):
         assert isinstance(latent, tf.Tensor)
 
         perception = self.perceiver(enc, latent, training=training)
-        pred, debug_info = self.ns_predictor(perception)
+        pred, debug_info = self.predictor(perception)
         debug_info.update({'ns_prediction.perceiver': perception, 'ns_prediction.pred': pred})
         return (pred, debug_info)

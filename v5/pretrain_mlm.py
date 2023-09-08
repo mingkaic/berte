@@ -15,8 +15,7 @@ import tensorflow_text as text
 import tensorflow as tf
 
 # local packages
-import dataset
-
+import export.dataset as dataset
 import export.mlm as mlm
 import export.model5 as model
 from export.model import InitParamBuilder
@@ -41,7 +40,7 @@ def _setup_cached_args(tokenizer_filename, tokenizer_setup, dataset_path):
                                                 add_bos=tokenizer_setup["add_bos"],
                                                 add_eos=tokenizer_setup["add_eos"])
     # generate or retrieve cached values
-    return cache_values("configs/pretrain_cache.yaml", {
+    return cache_values("configs/pretrain_mlm_cache.yaml", {
         "dataset_width": dataset.generate_dataset_width,
         "vocab_size": lambda _, tokenizer: int(tokenizer.vocab_size().numpy()),
     }, dataset_path, tokenizer)
@@ -112,6 +111,7 @@ class PretrainerPipeline:
             _args = yaml.safe_load(file.read())
             self.tokenizer_setup = _args["tokenizer_args"]
             self.model_args = _args["model_args"]
+            self.preprocessor_dir = _args["preprocessor"]
         with open("configs/mlm_dataset.yaml") as file:
             _args = yaml.safe_load(file.read())
             self.tokenizer_filename = _args["tokenizer_model"]
@@ -129,7 +129,9 @@ class PretrainerPipeline:
                 beta_1=0.9, beta_2=0.98, epsilon=1e-9)
         return optimizer
 
-    def setup_pretrainer(self, ckpt_id, ckpt_options=None, in_model_dir=None):
+    def setup_pretrainer(self, ckpt_id,
+            in_model_dir = None,
+            ckpt_options=None):
         """ create and initialize pretrainer """
 
         optimizer = self.setup_optimizer()
@@ -142,9 +144,9 @@ class PretrainerPipeline:
         _args.update(self.model_args)
         for key in _args:
             builder.add_param(_args[key], key)
-        preprocessor = model.PretrainerPerprocessor(in_model_dir,
+        preprocessor = model.PretrainerPreprocessor(self.preprocessor_dir,
                 optimizer, builder.build(), self.tokenizer_setup)
-        pretrainer = model.ExtendedPretrainerMLM('', builder.build())
+        pretrainer = model.ExtendedPretrainerMLM(in_model_dir, builder.build())
 
         ckpt = tf.train.Checkpoint(
                 optimizer=optimizer,
@@ -173,7 +175,7 @@ class PretrainerPipeline:
 
         # models
         preprocessor, pretrainer, ckpt_manager, optimizer = self.setup_pretrainer(
-                ckpt_id, ckpt_options, in_model_dir)
+                ckpt_id, in_model_dir, ckpt_options)
 
         # testing
         run_test = mlm.build_tester(preprocessor, pretrainer,
