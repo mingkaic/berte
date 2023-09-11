@@ -23,6 +23,7 @@ S3_DIR = 'v4'
 CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
 ID = 'pretraining'
 OUTDIR = 'out'
+IN_MODEL = 'berte_pretrain'
 
 syncer = init.S3BucketSyncer(S3_BUCKET)
 syncer.download_if_notfound('configs', os.path.join(S3_DIR, ID, 's3_configs.tar.gz'))
@@ -30,7 +31,7 @@ syncer.download_if_notfound('export', os.path.join(S3_DIR, ID, 's3_export.tar.gz
 syncer.download_if_notfound('intake', os.path.join(S3_DIR, ID, 's3_intake.tar.gz'))
 
 # business logic
-from pretrain import PretrainRunner
+from common.pretrain import PretrainRunner, TrainingMethod
 
 if __name__ == '__main__':
     logger = init.create_logger(ID, CLOUDWATCH_GROUP, EC2_REGION)
@@ -41,7 +42,21 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    PretrainRunner('aws', CLOUDWATCH_GROUP, 'berte_pretrain').\
+    PretrainRunner('aws', CLOUDWATCH_GROUP, IN_MODEL,
+            {
+                'group': CLOUDWATCH_GROUP,
+                'model_id': IN_MODEL,
+            },
+            training_methods=[
+                TrainingMethod('mlm', {
+                    'metric_name': 'berte',
+                    'dataset_config': "configs/mlm_dataset2.yaml",
+                }),
+                TrainingMethod('nsp', {
+                    'metric_name': 'berte_nsp',
+                    'dataset_config': "configs/nsp_dataset2.yaml",
+                }),
+            ]).\
             sequence(10, 'intake/berte_pretrain', OUTDIR)
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])

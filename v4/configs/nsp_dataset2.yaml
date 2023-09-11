@@ -5,6 +5,6 @@ args:
     mask_rate: 0.15
     window: 17
 settings:
-    epochs: 1
+    epochs: 3
     epochs_per_test: 1
     epochs_per_save: 1

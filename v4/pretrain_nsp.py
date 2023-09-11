@@ -85,7 +85,8 @@ class EpochPretrainer:
 
 class PretrainerPipeline:
     """ pretrainer pipeline """
-    def __init__(self, logger, outdir):
+    def __init__(self, logger, outdir,
+            dataset_config="configs/nsp_dataset.yaml"):
 
         self.logger = logger
         self.outdir = outdir
@@ -98,7 +99,7 @@ class PretrainerPipeline:
             _args = yaml.safe_load(file.read())
             self.tokenizer_setup = _args["tokenizer_args"]
             self.model_args = _args["model_args"]
-        with open("configs/nsp_dataset.yaml") as file:
+        with open(dataset_config) as file:
             _args = yaml.safe_load(file.read())
             self.dataset_path = _args["path"]
             self.training_args = _args["args"]

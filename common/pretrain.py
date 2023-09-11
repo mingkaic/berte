@@ -3,6 +3,7 @@
 This module calls pretrainers
 """
 # standard packages
+import functools
 import subprocess
 import os
 
@@ -10,20 +11,23 @@ import shutil
 
 CACHE_DIR = 'cache_dir'
 
+def parse_flag_args(flags):
+    flagset = [('--'+key, flags[key]) for key in flags]
+    return functools.reduce(lambda ltuple, rtuple: ltuple + rtuple, flagset)
+
 class TrainingMethod:
     """
     TrainingMethod runs a pretraining type (e.g.: mlm, nsp, scmlm)
     """
-    def __init__(self, method_type, metric_name='berte'):
+    def __init__(self, method_type, flags):
         self.method_type = method_type
-        self.metric_name = metric_name
+        self.flags = flags
 
     def run(self, cmds, args):
         """ run runs cmd for the pretraining type using the specified metric_name """
-        _, err = subprocess.Popen(cmds + (
-                '--metric_name', self.metric_name,
-                self.method_type,
-            ) + args, stdout=subprocess.PIPE).communicate()
+        _, err = subprocess.Popen(cmds + parse_flag_args(self.flags) +\
+                (self.method_type,) + args,
+                stdout=subprocess.PIPE).communicate()
         if err:
             print(err)
 
@@ -31,20 +35,19 @@ class PretrainRunner:
     """
     PretrainerRunner allows running multiple methods in series over a number of epochs
     """
-    def __init__(self, env, group_id, model_id,
+    def __init__(self, env, group_id, model_id, flags,
             training_methods=None):
         if training_methods is None:
-            training_methods = [
-                TrainingMethod('mlm', metric_name='berte'),
-                TrainingMethod('nsp', metric_name='berte_nsp'),
+            self.training_methods = [
+                TrainingMethod('mlm', {'metric_name': 'berte'}),
+                TrainingMethod('nsp', {'metric_name': 'berte_nsp'}),
             ]
+        else:
+            self.training_methods = training_methods
 
-        self.args = ('python3', 'pretrain_{}.py'.format(env),
-                '--group', group_id,
-                '--model_id', model_id)
+        self.args = ('python3', 'pretrain_{}.py'.format(env)) + parse_flag_args(flags)
         self.group_id = group_id
         self.model_id = model_id
-        self.training_methods = training_methods
 
     def sequence(self, nepochs, in_model_dir, out_dir):
         """

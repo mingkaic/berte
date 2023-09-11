@@ -31,7 +31,7 @@ def shorten_ds(training_ds):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-                    prog='pretrain_mlm_local',
+                    prog='pretrain_test_aws',
                     description='runs pretrain_mlm on the local environment')
     parser.add_argument('type')
     parser.add_argument('in_model_dir')

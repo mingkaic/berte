@@ -26,7 +26,7 @@ ID = 'pretraining'
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-                    prog='pretrain_mlm_aws',
+                    prog='pretrain_aws',
                     description='runs pretrain_mlm on the aws environment')
     parser.add_argument('type')
     parser.add_argument('in_model_dir')
@@ -34,6 +34,7 @@ if __name__ == '__main__':
     parser.add_argument('--group')
     parser.add_argument('--model_id')
     parser.add_argument('--metric_name', default='berte')
+    parser.add_argument('--dataset_config', default='')
     args = parser.parse_args()
 
     logger = init.create_logger(ID, args.group, EC2_REGION)
@@ -48,7 +49,13 @@ if __name__ == '__main__':
     else:
         Pipeline = MLMPretrainerPipeline
 
-    Pipeline(logger, args.out_dir).e2e(
+    if len(args.dataset_config) == 0:
+        dataset_config = "configs/{}_dataset.yaml".format(args.type)
+    else:
+        dataset_config = args.dataset_config
+
+    Pipeline(logger, args.out_dir,
+            dataset_config=dataset_config).e2e(
         in_model_dir=args.in_model_dir,
         ckpt_id=args.model_id,
         model_id=args.model_id,
