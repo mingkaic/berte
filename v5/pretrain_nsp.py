@@ -10,7 +10,6 @@ import functools
 import yaml
 
 # installed packages
-import tensorflow_text as text
 import tensorflow as tf
 
 # local packages
@@ -22,7 +21,6 @@ from export.model import InitParamBuilder
 
 import common.telemetry as telemetry
 import common.training as training
-from common.cache import cache_values
 
 EPOCH_PRETRAINER_ARGS = [
     "training_settings",
@@ -85,7 +83,8 @@ class EpochPretrainer:
 
 class PretrainerPipeline:
     """ pretrainer pipeline """
-    def __init__(self, logger, outdir):
+    def __init__(self, logger, outdir,
+            dataset_config="configs/nsp_dataset.yaml"):
 
         self.logger = logger
         self.outdir = outdir
@@ -99,7 +98,7 @@ class PretrainerPipeline:
             self.tokenizer_setup = _args["tokenizer_args"]
             self.model_args = _args["model_args"]
             self.preprocessor_dir = _args["preprocessor"]
-        with open("configs/nsp_dataset.yaml") as file:
+        with open(dataset_config) as file:
             _args = yaml.safe_load(file.read())
             self.dataset_path = _args["path"]
             self.training_args = _args["args"]
@@ -127,7 +126,7 @@ class PretrainerPipeline:
         for key in self.model_args:
             builder.add_param(self.model_args[key], key)
         preprocessor = model.PretrainerPreprocessor(self.preprocessor_dir,
-                optimizer, builder.build(), self.tokenizer_setup)
+                optimizer, builder.build(), self.tokenizer_setup, 'nsp')
         pretrainer = model.ExtendedPretrainerNSP(in_model_dir, builder.build())
 
         ckpt = tf.train.Checkpoint(

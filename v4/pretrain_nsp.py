@@ -10,7 +10,6 @@ import functools
 import yaml
 
 # installed packages
-import tensorflow_text as text
 import tensorflow as tf
 
 # local packages
@@ -22,7 +21,6 @@ from export.mlm import NAN_LOSS_ERR_CODE
 
 import common.telemetry as telemetry
 import common.training as training
-from common.cache import cache_values
 
 EPOCH_PRETRAINER_ARGS = [
     "training_settings",

@@ -45,7 +45,7 @@ class Perceiver(tf.keras.Model):
         """
         calls with multiple latents
         """
-        return self.perm_perceiver(inputs, latentn, training, *args)
+        return self.perm_perceiver(inputs, latent, *args, training=training)
 
     def get_config(self):
         config = super().get_config()
@@ -67,13 +67,14 @@ class PretrainerPreprocessor(CommonPretrainer):
     """
     Collection of models used in pretraining.
     """
-    def __init__(self, model_path, optimizer, params, tokenizer_setup):
+    def __init__(self, model_path, optimizer, params, tokenizer_setup,
+            training_type='mlm'):
         super().__init__(model_path, {
             'tokenizer': (
                 lambda fpath: model._load_sentencepiece(fpath, tokenizer_setup),
                 lambda _, dst: model._copy_tokenizer(os.path.join(model_path, 'tokenizer'), dst)),
-            'metadata': (lambda fpath: model._load_metadata(fpath, model_path, 'nsp', optimizer),
-                save_model),
+            'metadata': (lambda fpath: model._load_metadata(
+                fpath, model_path, training_type, optimizer), save_model),
             'preprocessor': (
                 lambda fpath: load_keras(fpath, Preprocessor, params), save_model),
         })
@@ -113,6 +114,17 @@ class ExtendedPretrainerMLM(CommonPretrainer):
         assert isinstance(latent, tf.Tensor)
 
         perception = self.perceiver(enc, latent, training=training)
+        pred, debug_info = self.predictor(perception)
+        debug_info.update({'ml_prediction.perceiver': perception, 'ml_prediction.pred': pred})
+        return (pred, debug_info)
+
+    def multi_latent_ml_prediction(self, enc, latent, latent2, training=False):
+        """ deduce the tokens replaced by <mask> """
+        assert isinstance(enc, tf.Tensor)
+        assert isinstance(latent, tf.Tensor)
+
+        perception = self.perceiver.multi_call(enc, latent, latent2,
+                training=training)
         pred, debug_info = self.predictor(perception)
         debug_info.update({'ml_prediction.perceiver': perception, 'ml_prediction.pred': pred})
         return (pred, debug_info)

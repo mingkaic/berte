@@ -98,7 +98,8 @@ class EpochPretrainer:
 
 class PretrainerPipeline:
     """ pretrainer pipeline """
-    def __init__(self, logger, outdir):
+    def __init__(self, logger, outdir,
+            dataset_config="configs/mlm_dataset.yaml"):
 
         self.logger = logger
         self.outdir = outdir
@@ -112,7 +113,7 @@ class PretrainerPipeline:
             self.tokenizer_setup = _args["tokenizer_args"]
             self.model_args = _args["model_args"]
             self.preprocessor_dir = _args["preprocessor"]
-        with open("configs/mlm_dataset.yaml") as file:
+        with open(dataset_config) as file:
             _args = yaml.safe_load(file.read())
             self.tokenizer_filename = _args["tokenizer_model"]
             self.dataset_path = _args["path"]
@@ -145,7 +146,7 @@ class PretrainerPipeline:
         for key in _args:
             builder.add_param(_args[key], key)
         preprocessor = model.PretrainerPreprocessor(self.preprocessor_dir,
-                optimizer, builder.build(), self.tokenizer_setup)
+                optimizer, builder.build(), self.tokenizer_setup, 'mlm')
         pretrainer = model.ExtendedPretrainerMLM(in_model_dir, builder.build())
 
         ckpt = tf.train.Checkpoint(
@@ -243,4 +244,4 @@ if __name__ == '__main__':
                         filemode='w')
     _logger = logging.getLogger()
     _logger.setLevel(logging.INFO)
-    PretrainerPipeline(_logger, 'export').e2e(in_model_dir='intake/berte_pretrain')
+    PretrainerPipeline(_logger, 'export').e2e()

@@ -72,6 +72,7 @@ def setup_scmlm_dataset(dataset_dirpath, training_args, tokenizer, paragraph_len
                 growth = paragraph_length - paragraph.shape[0]
                 if growth > 0:
                     paragraph = tf.pad(paragraph, [[0, growth]], constant_values="")
+                    lengths += [0] * growth
                 yield paragraph, lengths
 
         def batch_process(paragraph, lengths):

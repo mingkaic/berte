@@ -9,6 +9,7 @@ import argparse
 
 # business logic
 from pretrain_mlm import PretrainerPipeline as MLMPretrainerPipeline
+from pretrain_scmlm import PretrainerPipeline as SCMLMPretrainerPipeline
 from pretrain_nsp import PretrainerPipeline as NSPPretrainerPipeline
 
 def shorten_ds(training_ds):
@@ -40,6 +41,8 @@ if __name__ == '__main__':
         Pipeline = MLMPretrainerPipeline
     elif args.type == 'nsp':
         Pipeline = NSPPretrainerPipeline
+    elif args.type == 'scmlm':
+        Pipeline = SCMLMPretrainerPipeline
     else:
         Pipeline = MLMPretrainerPipeline
 

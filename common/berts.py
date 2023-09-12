@@ -85,10 +85,14 @@ class Perceiver(tf.keras.layers.Layer):
     Encapsulate perceiver layers using improvements as noted in LLaMa
     https://arxiv.org/pdf/2302.13971.pdf
     """
-    def __init__(self, num_layers, params):
+    def __init__(self, num_layers, params, additional_latents=0):
         super().__init__()
         self.params = params
         self.perceiver_layers = [_perceiverLayer(params) for _ in range(num_layers)]
+        self.additional_perceivers = [
+            [_perceiverLayer(params) for _ in range(num_layers)]
+            for _ in range(additional_latents)
+        ]
 
     @tf.function(input_signature=[
         tf.TensorSpec(shape=[None, None, None], dtype=tf.float32),
@@ -112,11 +116,12 @@ class Perceiver(tf.keras.layers.Layer):
         """
         # enc.shape == (batch_size, ?, ?)
         # latent.shape == (batch_size, latent_dim, model_dim)
-        for perceiver_layer in self.perceiver_layers:
+        for i, perceiver_layer in enumerate(self.perceiver_layers):
             # enc.shape == (batch_size, latent_dim, model_dim)
             enc = perceiver_layer(enc, latent, training=training)
-            for lat in args:
-                enc = perceiver_layer(enc, lat, training=training)
+            for j, lat in enumerate(args[:len(self.additional_perceivers)]):
+                enc = self.additional_perceivers[j][i](enc, lat,
+                        training=training)
         return enc
 
     def get_config(self):
