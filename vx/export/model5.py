@@ -118,13 +118,15 @@ class ExtendedPretrainerMLM(CommonPretrainer):
         debug_info.update({'ml_prediction.perceiver': perception, 'ml_prediction.pred': pred})
         return (pred, debug_info)
 
-    def multi_latent_ml_prediction(self, enc, latent, latent2, training=False):
+    def multi_latent_ml_prediction(self, enc, latent, training=False, *args):
         """ deduce the tokens replaced by <mask> """
         assert isinstance(enc, tf.Tensor)
         assert isinstance(latent, tf.Tensor)
 
-        perception = self.perceiver.multi_call(enc, latent, latent2,
-                training=training)
+        print('>>>', flush=True)
+        print(dir(self.perceiver), flush=True)
+        perception = self.perceiver.multi_call(enc, latent,
+                training=training, *args)
         pred, debug_info = self.predictor(perception)
         debug_info.update({'ml_prediction.perceiver': perception, 'ml_prediction.pred': pred})
         return (pred, debug_info)

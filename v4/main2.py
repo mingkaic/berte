@@ -3,6 +3,7 @@
 This runs pretrain_nsp.ipynb in an AWS instance
 """
 # standard packages
+import sys
 import logging
 import os.path
 
@@ -42,7 +43,7 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    PretrainRunner('aws', CLOUDWATCH_GROUP, IN_MODEL,
+    err = PretrainRunner('aws', CLOUDWATCH_GROUP, IN_MODEL,
             {
                 'group': CLOUDWATCH_GROUP,
                 'model_id': IN_MODEL,
@@ -58,5 +59,9 @@ if __name__ == '__main__':
                 }),
             ]).\
             sequence(10, 'intake/berte_pretrain', OUTDIR)
+    if err:
+        print(err)
+        sys.exit(1)
+
     syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])

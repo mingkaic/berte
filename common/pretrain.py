@@ -28,8 +28,7 @@ class TrainingMethod:
         _, err = subprocess.Popen(cmds + parse_flag_args(self.flags) +\
                 (self.method_type,) + args,
                 stdout=subprocess.PIPE).communicate()
-        if err:
-            print(err)
+        return err
 
 class PretrainRunner:
     """
@@ -60,8 +59,11 @@ class PretrainRunner:
         for epoch in range(nepochs):
             for i, trainer in enumerate(self.training_methods):
                 next_path = os.path.join(cache_path, 'epoch{}_interm{}'.format(epoch, i))
-                trainer.run(self.args, (in_model_dir, next_path))
+                err = trainer.run(self.args, (in_model_dir, next_path))
+                if err:
+                    return err
                 in_model_dir = os.path.join(next_path, self.model_id)
 
         shutil.copytree(next_path, out_dir, dirs_exist_ok=True)
         shutil.rmtree(cache_path)
+        return None

@@ -3,7 +3,6 @@
 This module includes functions for pretraining and testing nsp
 """
 
-import numpy as np
 import tensorflow as tf
 
 import export.mlm as mlm
@@ -19,7 +18,7 @@ def build_pretrainer(preprocessor, action_module, optimizer, ds_width, paragraph
 
         with tf.GradientTape() as tape:
             prediction, debug_info2 = action_module.multi_latent_ml_prediction(
-                    enc, latent, *args, training=True)
+                    enc, latent, training=True, *args)
             target = tf.cast(target, tf.int64)
             loss, debug_info3 = training.loss_function(target, prediction,
                     pad=action_module.metadata.pad())
@@ -40,7 +39,7 @@ def build_pretrainer(preprocessor, action_module, optimizer, ds_width, paragraph
             batch = tf.boolean_mask(batch, mask, axis=0)
             lengths = tf.boolean_mask(lengths, mask, axis=0)
             target, source = mlm.mask_lm(
-                    batch[:, i], lengths[:, i], mask_rate,
+                    preprocessor.tokenize(batch[:, i]), lengths[:, i], mask_rate,
                     pad_id=preprocessor.metadata.pad(),
                     mask_id=preprocessor.metadata.mask(),
                     ds_width=ds_width)

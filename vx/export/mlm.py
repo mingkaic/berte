@@ -16,8 +16,12 @@ def mask_lm(tokens, lengths, mask_rate, pad_id, mask_id, ds_width,
     lengths -= 2 # exclude bos and eos
 
     # ensure tokens has shape [batch_size, ds_width]
-    tokens = tf.pad(tokens, ([0, 0], [0, ds_width - tokens.numpy().shape[1]]),
-        constant_values=pad_id)
+    shape = tokens.numpy().shape
+    ext = ds_width - shape[-1]
+    if len(shape) > 1:
+        tokens = tf.pad(tokens, ([0, 0], [0, ext]), constant_values=pad_id)
+    else:
+        tokens = tf.concat([tokens, tf.constant([pad_id]*ext, dtype=tf.int32)], 0)
 
     state_prob = np.random.rand()
 
