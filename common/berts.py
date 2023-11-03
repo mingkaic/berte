@@ -120,8 +120,7 @@ class Perceiver(tf.keras.layers.Layer):
             # enc.shape == (batch_size, latent_dim, model_dim)
             enc = perceiver_layer(enc, latent, training=training)
             for j, lat in enumerate(args[:len(self.additional_perceivers)]):
-                enc = self.additional_perceivers[j][i](enc, lat,
-                        training=training)
+                enc = self.additional_perceivers[j][i](enc, lat, training=training)
         return enc
 
     def get_config(self):

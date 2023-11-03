@@ -1,0 +1,9 @@
+path: "intake/raw_wiki_dataset"
+args:
+    buffer_size: 20000
+    batch_size: 32
+    window: 17
+settings:
+    epochs: 3
+    epochs_per_test: 1
+    epochs_per_save: 1

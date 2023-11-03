@@ -1,0 +1,10 @@
+tokenizer_model: "intake/berte_pretrain/tokenizer.model"
+path: "intake/persentence_dataset"
+args:
+    buffer_size: 20000
+    batch_size: 16
+    mask_rate: 0.15
+settings:
+    epochs: 3
+    epochs_per_test: 1
+    epochs_per_save: 1
