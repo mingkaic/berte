@@ -93,16 +93,19 @@ class Memory(tf.keras.Model):
         self.memory_dim = memory_dim
         self.params = params
 
-        model_dim = params['model_dim']
-        self.model_dim = model_dim
+        self.model_dim = params['model_dim']
         num_heads = params['num_heads']
         dff = params['dff']
         dropout_rate = params['dropout_rate']
         self.latent = tf.keras.initializers.GlorotNormal()(
-                shape=(1, self.memory_dim, model_dim))
-        self.encoder = berts.Perceiver(num_layers, params)
+                shape=(self.memory_dim, self.model_dim))
+        self.encoder = berts.Perceiver(num_enc_layers, params)
+        self.mem = tf.keras.Sequential([
+            tf.keras.layers.Dense(self.memory_dim, use_bias=False)
+            for _ in range(num_layers)
+        ])
         self.decoder = berts.Encoder(num_enc_layers,
-            berts.encoder_init_builder().model_dim(model_dim).num_heads(num_heads).\
+            berts.encoder_init_builder().model_dim(self.model_dim).num_heads(num_heads).\
             dff(dff).dropout_rate(dropout_rate).use_bias(True).build())
 
     @tf.function(input_signature=[
@@ -116,11 +119,15 @@ class Memory(tf.keras.Model):
         # inputs.shape == (batch_size, x, model_dim)
         # latent.shape == (1, memory_dim, model_dim)
         # enc.shape == (batch_size, memory_dim, model_dim)
-        enc = self.encoder(inputs, self.latent, training)
+        batch_size = tf.shape(inputs)[0]
+        latent = tf.broadcast_to(self.latent, [batch_size, self.memory_dim, self.model_dim])
+        enc = self.encoder(inputs, latent, training)
         enc = tf.ensure_shape(enc, [None, self.memory_dim, self.model_dim])
+        # mem.shape == (batch_size, memory_dim, model_dim)
+        mem = self.mem(enc, training)
+        mem = tf.ensure_shape(mem, [None, self.memory_dim, self.model_dim])
         # dec.shape == (batch_size, memory_dim, model_dim)
-        dec = self.decoder(enc, training)
-        dec = tf.ensure_shape(dec, [None, self.memory_dim, self.model_dim])
+        dec = self.decoder(mem, training)
         return dec
 
     def get_config(self):
@@ -151,6 +158,7 @@ class MemoryProcessor(tf.keras.Model):
         num_mem_enc_layers = params["num_mem_enc_layers"]
         num_mem_layers = params["num_mem_layers"]
         num_perceiver_layers = params["num_perceiver_layers"]
+        self.model_dim = model_dim
 
         num_heads = params['num_heads']
         max_pe = params['max_pe']
@@ -184,6 +192,7 @@ class MemoryProcessor(tf.keras.Model):
         emb = self.embedder(inputs, training)
         # enc.shape == (batch_size, x, model_dim)
         enc = self.encoder(emb, berts.create_padding_mask(inputs), training)
+        enc = tf.ensure_shape(enc, [None, None, self.model_dim])
         # mem.shape == (batch_size, memory_dim, model_dim)
         mem = self.mem(enc, training)
         # out.shape == (batch_size, x, model_dim)
@@ -225,8 +234,9 @@ class Predictor(tf.keras.Model):
         inputs = tf.ensure_shape(inputs, [None, None, self.model_dim])
         norm_inp = self.norm_layer(inputs, training=training)
         assert norm_inp is not None
-        # shape == (batch_size, x, vocab_size)
+        # shape == (batch_size, x, out_size)
         pred = self.vocab_pred(norm_inp)
+        pred = tf.ensure_shape(pred, [None, None, self.out_size])
         result, _ = tf.linalg.normalize(pred, ord=1, axis=-1)
         debug_info = {
             'predictor.norm_inp': norm_inp,
@@ -466,6 +476,6 @@ class PretrainerNSP(_commonPretrainer):
         assert isinstance(tokens, tf.Tensor)
 
         enc = self.processor(tokens, training=training)
-        pred, debug_info = self.ns_predictor(latent)
+        pred, debug_info = self.ns_predictor(enc)
         debug_info.update({'ns_prediction.prediction': pred})
         return (pred, debug_info)

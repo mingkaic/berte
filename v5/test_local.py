@@ -6,7 +6,7 @@ This tests pretrain locally
 import shutil
 import psutil
 
-from common.pretrain import PretrainRunner
+from common.pretrain import PretrainRunner, TrainingMethod
 
 if __name__ == '__main__':
     ID = 'test'
@@ -19,7 +19,10 @@ if __name__ == '__main__':
             {
                 'group': ID,
                 'model_id': ID,
-            }).sequence(5, MODEL_DIR, ID)
+            }, training_methods = [
+                TrainingMethod('mlm', {'metric_name': 'berte'}),
+                TrainingMethod('nsp', {'metric_name': 'berte_nsp'}),
+            ]).sequence(5, MODEL_DIR, ID)
     print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
 
     shutil.rmtree(ID) # remove checkpoints
