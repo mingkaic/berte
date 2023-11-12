@@ -53,7 +53,7 @@ class PretrainRunner:
         sequence runs the trainers for nepochs
         """
         cache_path = os.path.join(self.group_id, CACHE_DIR)
-        if os.path.exists(cache_path):
+        if not os.path.exists(cache_path):
             os.makedirs(cache_path, exist_ok=True)
 
         for epoch in range(nepochs):

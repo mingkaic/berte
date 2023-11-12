@@ -24,7 +24,7 @@ ls -1 $SOURCE_CODE/*.py | awk 'BEGIN { FS = "/" } ; {print $2}' |
 
 # zip
 pushd $BASE;
-tar -cvzf "$TARGET/ec2_deployment.tar.gz" workspace;
+tar -hcvzf "$TARGET/ec2_deployment.tar.gz" workspace;
 popd;
 
 # clean up

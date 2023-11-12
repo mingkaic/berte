@@ -101,7 +101,7 @@ class Memory(tf.keras.Model):
                 shape=(self.memory_dim, self.model_dim))
         self.encoder = berts.Perceiver(num_enc_layers, params)
         self.mem = tf.keras.Sequential([
-            tf.keras.layers.Dense(self.memory_dim, use_bias=False)
+            tf.keras.layers.Dense(self.model_dim, use_bias=False)
             for _ in range(num_layers)
         ])
         self.decoder = berts.Encoder(num_enc_layers,

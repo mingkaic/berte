@@ -14,8 +14,8 @@ mkdir -p "$TARGET";
 
 ## zip configs and export model
 pushd $SOURCE_CODE;
-tar -cvzf "$TARGET/s3_configs.tar.gz" configs;
-tar -cvzf "$TARGET/s3_export.tar.gz" "export";
+tar -hcvzf "$TARGET/s3_configs.tar.gz" configs;
+tar -hcvzf "$TARGET/s3_export.tar.gz" "export";
 if [ -d intake ]; then
 	tar -hcvzf "$TARGET/s3_intake.tar.gz" intake;
 fi
