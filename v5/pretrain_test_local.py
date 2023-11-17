@@ -25,6 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--group')
     parser.add_argument('--model_id')
     parser.add_argument('--metric_name', default='berte')
+    parser.add_argument('--dataset_config', default='')
     args = parser.parse_args()
 
     if not os.path.exists(args.group):
@@ -43,7 +44,13 @@ if __name__ == '__main__':
     else:
         Pipeline = MLMPretrainerPipeline
 
-    Pipeline(logger, args.out_dir).e2e(
+    if len(args.dataset_config) == 0:
+        dataset_config = "configs/{}_dataset.yaml".format(args.type)
+    else:
+        dataset_config = args.dataset_config
+
+    Pipeline(logger, args.out_dir,
+            dataset_config=dataset_config).e2e(
         in_model_dir=args.in_model_dir,
         ckpt_id=args.model_id,
         model_id=args.model_id,

@@ -43,7 +43,7 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    err = PretrainRunner('aws', CLOUDWATCH_GROUP, '',
+    err = PretrainRunner('aws', CLOUDWATCH_GROUP, MODEL_ID,
             { 'group': CLOUDWATCH_GROUP, 'model_id': MODEL_ID },
             training_methods=[
                 TrainingMethod('mlm', {
