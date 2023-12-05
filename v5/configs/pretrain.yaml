@@ -1,6 +1,6 @@
 tokenizer_args:
-    add_bos: True
-    add_eos: True
+    add_bos: False
+    add_eos: False
 model_args:
     model_dim: 256
     memory_dim: 512

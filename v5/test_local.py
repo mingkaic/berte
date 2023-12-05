@@ -1,28 +1,38 @@
 #!/usr/bin/env python3
 """
-This tests pretrain locally
+This runs pretrain_mlm or pretrain_nsp on the local machine
 """
 # standard packages
+import logging
+import os
 import shutil
-import psutil
 
-from common.pretrain import PretrainRunner, TrainingMethod
+# business logic
+from pretrain import PretrainerPipeline
 
-ID = 'test'
-MODEL_DIR = 'intake/berte_pretrain'
+OUTDIR = 'test'
+IN_MODEL_DIR = 'intake/berte_pretrain'
 MODEL_ID = 'berte_pretrain'
 
+def shorten_ds(training_ds):
+    """ take 36 from the dataset """
+    return training_ds.take(36)
+
 if __name__ == '__main__':
-    process = psutil.Process()
-    print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
+    if not os.path.exists(OUTDIR):
+        os.makedirs(OUTDIR, exist_ok=True)
 
-    PretrainRunner('test_local', ID, MODEL_ID,
-            { 'group': ID, 'model_id': MODEL_ID },
-            training_methods = [
-                TrainingMethod('mlm', {'metric_name': 'berte'}),
-                TrainingMethod('nsp', {'metric_name': 'berte_nsp'}),
-            ]).sequence(5, MODEL_DIR, ID)
-    print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
+    logging.basicConfig(filename=os.path.join(OUTDIR, "pretrain.log"),
+                        format='%(asctime)s %(message)s',
+                        filemode='w')
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
 
-    shutil.rmtree(ID) # remove checkpoints
-    print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
+    PretrainerPipeline(logger, OUTDIR,
+             tokenizer_model=os.path.join(IN_MODEL_DIR, "tokenizer.model")).\
+    e2e(in_model_dir=IN_MODEL_DIR,
+        ckpt_id=MODEL_ID,
+        model_id=MODEL_ID,
+        training_preprocessing=shorten_ds)
+
+    shutil.rmtree(OUTDIR) # remove checkpoints

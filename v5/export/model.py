@@ -265,56 +265,54 @@ def best_effort_load(fpath):
         return tf.keras.models.load_model(fpath)
     return None
 
+DISTANCE_CLASSES = 5
+
 class BerteMetadata:
     """ model just for saving metadata """
     @staticmethod
-    def load(model_dir, ctx_key, optimizer):
+    def load(model_dir, optimizer):
         """ load BerteMetadata from model directory """
         with open(model_dir, 'r') as file:
             revived_obj = json.loads(file.read())
 
-        existing_iter_map = dict()
-        optimizer_iter = revived_obj['optimizer_iter']
-        if isinstance(optimizer_iter, dict):
-            existing_iter_map = optimizer_iter
-            optimizer_iter = optimizer_iter.get(ctx_key, 0)
-        elif ctx_key == 'nsp':
-            optimizer_iter = 0
+        optimizer_iter = revived_obj.get('optimizer_iter', 0)
         optimizer.iterations.assign(optimizer_iter)
         return BerteMetadata("",
-            ctx_key=ctx_key,
             optimizer_iter=optimizer.iterations,
             existing_iter_map=existing_iter_map,
             args={
-                'sep': revived_obj['sep'],
                 'mask': revived_obj['mask'],
+                'cls': revived_obj['cls'],
+                'sep': revived_obj['sep'],
                 'unk': revived_obj['unk'],
                 'bos': revived_obj['bos'],
                 'eos': revived_obj['eos'],
                 'pad': revived_obj['pad'],
             })
 
-    def __init__(self, tokenizer_filename, ctx_key, optimizer_iter,
+    def __init__(self, tokenizer_filename, optimizer_iter,
             existing_iter_map=dict(),
             args=None):
 
         if args is None:
             tmp_sp = sp.SentencePieceProcessor()
             tmp_sp.load(tokenizer_filename)
-            self._sep = tmp_sp.piece_to_id('<sep>')
             self._mask = tmp_sp.piece_to_id('<mask>')
+            self._cls = [tmp_sp.piece_to_id('<cls>')]+\
+                [tmp_sp.piece_to_id('<cls{}>'.format(i)) for i in range(1, DISTANCE_CLASSES)]
+            self._sep = tmp_sp.piece_to_id('<sep>')
             self._unk = tmp_sp.unk_id()
             self._bos = tmp_sp.bos_id()
             self._eos = tmp_sp.eos_id()
             self._pad = tmp_sp.pad_id()
         else:
-            self._sep = args['sep']
             self._mask = args['mask']
+            self._cls = args['cls']
+            self._sep = args['sep']
             self._unk = args['unk']
             self._bos = args['bos']
             self._eos = args['eos']
             self._pad = args['pad']
-        self._ctx_key = ctx_key
         self._optimizer_iter = optimizer_iter
         self._existing_iter_map = existing_iter_map
 
@@ -330,21 +328,25 @@ class BerteMetadata:
         """ return mask token value """
         return self._mask
 
+    def cls(self):
+        """ return cls token value """
+        return self._cls
+
     def sep(self):
         """ return sep token value """
         return self._sep
 
     def save(self, model_dir):
         """ save metadata into model_dir path """
-        self._existing_iter_map[self._ctx_key] = int(self._optimizer_iter.numpy())
         json_obj = {
-            'sep': int(self._sep),
             'mask': int(self._mask),
+            'sep': int(self._sep),
+            'cls': [int(c) for c in self._cls],
             'unk': int(self._unk),
             'bos': int(self._bos),
             'eos': int(self._eos),
             'pad': int(self._pad),
-            'optimizer_iter': self._existing_iter_map,
+            'optimizer_iter': int(self._optimizer_iter.numpy()),
         }
         with open(model_dir, 'w') as file:
             json.dump(json_obj, file)
@@ -393,10 +395,10 @@ def _load_sentencepiece(fpath, tokenizer_setup):
                 add_eos=tokenizer_setup["add_eos"])
     return None
 
-def _load_metadata(fpath, model_path, ctx_key, optimizer):
+def _load_metadata(fpath, model_path, optimizer):
     if os.path.exists(fpath):
-        return BerteMetadata.load(fpath, ctx_key, optimizer)
-    return BerteMetadata(os.path.join(model_path, 'tokenizer.model'), ctx_key, optimizer.iterations)
+        return BerteMetadata.load(fpath, optimizer)
+    return BerteMetadata(os.path.join(model_path, 'tokenizer.model'), optimizer.iterations)
 
 def _load_keras(fpath, kmodel, *params):
     if os.path.exists(fpath):
@@ -410,7 +412,7 @@ def _copy_tokenizer(src, dst):
     shutil.copyfile(src+'.vocab', dst+'.vocab')
     shutil.copyfile(src+'.model', dst+'.model')
 
-class PretrainerMLM(_commonPretrainer):
+class Pretrainer(_commonPretrainer):
     """
     Collection of models used in pretraining using MLM
     """
@@ -420,62 +422,30 @@ class PretrainerMLM(_commonPretrainer):
                 lambda fpath: _load_sentencepiece(fpath, tokenizer_setup),
                 lambda _, dst: _copy_tokenizer(os.path.join(model_path, 'tokenizer'), dst)),
             'metadata': (
-                lambda fpath: _load_metadata(fpath, model_path, 'mlm', optimizer), _save_model),
+                lambda fpath: _load_metadata(fpath, model_path, optimizer), _save_model),
             'processor': (
                 lambda fpath: _load_keras(fpath, MemoryProcessor, params), _save_model),
-            'mask_pred': (
+            'predictor': (
                 lambda fpath: _load_keras(fpath, Predictor,
                     params['model_dim'], params['vocab_size']), _save_model),
         })
         self.metadata = self.elems['metadata']
         self.tokenizer = self.elems['tokenizer']
         self.processor = self.elems['processor']
-        self.mask_predictor = self.elems['mask_pred']
+        self.predictor = self.elems['predictor']
 
     def tokenize(self, sentence):
         """ use pretrainer tokenizer """
-        return self.tokenizer.tokenize(sentence).to_tensor()
+        out = self.tokenizer.tokenize(sentence)
+        if not isinstance(out, tf.Tensor):
+            out = out.to_tensor()
+        return out
 
-    def mask_prediction(self, tokens, training=False):
+    def predict(self, tokens, training=False):
         """ deduce the tokens replaced by <mask> """
         assert isinstance(tokens, tf.Tensor)
 
         enc = self.processor(tokens, training=training)
-        pred, debug_info = self.mask_predictor(enc)
-        debug_info.update({'mask_prediction.prediction': pred})
-        return (pred, debug_info)
-
-class PretrainerNSP(_commonPretrainer):
-    """
-    Collection of models used in pretraining using NSP.
-    """
-    def __init__(self, model_path, optimizer, params, tokenizer_setup):
-        super().__init__(model_path, {
-            'tokenizer': (
-                lambda fpath: _load_sentencepiece(fpath, tokenizer_setup),
-                lambda _, dst: _copy_tokenizer(os.path.join(model_path, 'tokenizer'), dst)),
-            'metadata': (
-                lambda fpath: _load_metadata(fpath, model_path, 'mlm', optimizer), _save_model),
-            'processor': (
-                lambda fpath: _load_keras(fpath, MemoryProcessor, params), _save_model),
-            'ns_pred': (
-                lambda fpath: _load_keras(fpath, Predictor, params['model_dim'], 1), _save_model),
-        })
-
-        self.metadata = self.elems['metadata']
-        self.tokenizer = self.elems['tokenizer']
-        self.processor = self.elems['processor']
-        self.ns_predictor = self.elems['ns_pred']
-
-    def tokenize(self, sentence):
-        """ use pretrainer tokenizer """
-        return self.tokenizer.tokenize(sentence).to_tensor()
-
-    def ns_prediction(self, tokens, training=False):
-        """ deduce how far the sentences separated by <sep> are """
-        assert isinstance(tokens, tf.Tensor)
-
-        enc = self.processor(tokens, training=training)
-        pred, debug_info = self.ns_predictor(enc)
-        debug_info.update({'ns_prediction.prediction': pred})
+        pred, debug_info = self.predictor(enc)
+        debug_info.update({'prediction.prediction': pred})
         return (pred, debug_info)

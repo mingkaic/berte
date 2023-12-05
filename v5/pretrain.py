@@ -16,7 +16,7 @@ import tensorflow as tf
 
 # local packages
 import export.dataset as dataset
-import export.mlm as mlm
+import export.training as local_training
 import export.model as model
 
 import common.telemetry as telemetry
@@ -79,9 +79,9 @@ class EpochPretrainer:
         self.training_loss.reset_states()
         if self.training_accuracy is not None:
             self.training_accuracy.reset_states()
-        for i, (batch, lengths) in enumerate(self.training_batches):
-            debug_info, err_code = self.args["training_cb"](batch, lengths)
-            if err_code == mlm.NAN_LOSS_ERR_CODE:
+        for i, batch in enumerate(self.training_batches):
+            debug_info, err_code = self.args["training_cb"](batch)
+            if err_code == local_training.NAN_LOSS_ERR_CODE:
                 if nan_reporter is not None:
                     nan_reporter(debug_info)
                 logger.error('batch %d produced nan loss! skipping...', i)
@@ -97,10 +97,13 @@ class EpochPretrainer:
 class PretrainerPipeline:
     """ pretrainer pipeline """
     def __init__(self, logger, outdir,
-            dataset_config="configs/mlm_dataset.yaml"):
+            tokenizer_model="intake/berte_pretrain/tokenizer.model",
+            nsp_dataset_config="configs/nsp_dataset.yaml",
+            mlm_dataset_config="configs/mlm_dataset.yaml"):
 
         self.logger = logger
         self.outdir = outdir
+        self.tokenizer_filename = tokenizer_model
 
         if not os.path.exists(outdir):
             os.makedirs(outdir, exist_ok=True)
@@ -110,14 +113,19 @@ class PretrainerPipeline:
             _args = yaml.safe_load(file.read())
             self.tokenizer_setup = _args["tokenizer_args"]
             self.model_args = _args["model_args"]
-        with open(dataset_config) as file:
+
+        with open(nsp_dataset_config) as file:
             _args = yaml.safe_load(file.read())
-            self.tokenizer_filename = _args["tokenizer_model"]
-            self.dataset_path = _args["path"]
-            self.training_args = _args["args"]
-            self.training_settings = _args["settings"]
+            self.nsp_dataset_path = _args["path"]
+            self.nsp_training_args = _args["args"]
+            self.nsp_training_settings = _args["settings"]
+        with open(mlm_dataset_config) as file:
+            _args = yaml.safe_load(file.read())
+            self.mlm_dataset_path = _args["path"]
+            self.mlm_training_args = _args["args"]
+            self.mlm_training_settings = _args["settings"]
         self.cached_args = _setup_cached_args(
-            self.tokenizer_filename, self.tokenizer_setup, self.dataset_path)
+            self.tokenizer_filename, self.tokenizer_setup, self.mlm_dataset_path)
 
     def setup_optimizer(self):
         """ create and initialize optimizer """
@@ -140,8 +148,7 @@ class PretrainerPipeline:
         _args.update(self.model_args)
         for key in _args:
             builder.add_param(_args[key], key)
-        pretrainer = model.PretrainerMLM(in_model_dir,
-                optimizer, builder.build(), self.tokenizer_setup)
+        pretrainer = model.Pretrainer(in_model_dir, optimizer, builder.build(), self.tokenizer_setup)
 
         ckpt = tf.train.Checkpoint(optimizer=optimizer, pretrainer=pretrainer)
         ckpt_manager = tf.train.CheckpointManager(ckpt,
@@ -151,13 +158,11 @@ class PretrainerPipeline:
         if in_model_dir is None and ckpt_manager.latest_checkpoint:
             ckpt.restore(ckpt_manager.latest_checkpoint, options=ckpt_options)
             self.logger.info('Latest checkpoint restored!!')
-        self.logger.info('Beginning training with optimizer iteration=%d',
-            optimizer.iterations.numpy())
+        self.logger.info('Beginning training with optimizer iteration=%d', optimizer.iterations.numpy())
 
         return pretrainer, ckpt_manager, optimizer
 
-    def e2e(self,
-            in_model_dir=None,
+    def e2e(self, in_model_dir,
             ckpt_id='berte_pretrain',
             model_id='berte_pretrain',
             training_preprocessing=None,
@@ -170,58 +175,69 @@ class PretrainerPipeline:
                 ckpt_id, ckpt_options, in_model_dir)
 
         # testing
-        run_test = mlm.build_tester(pretrainer,
-                samples=[
-                    "este é um problema que temos que resolver.",
-                    "this is a problem we have to solve .",
-                    "os meus vizinhos ouviram sobre esta ideia.",
-                    "and my neighboring homes heard about this idea .",
-                    "vou então muito rapidamente partilhar convosco algumas histórias de algumas "
-                    "coisas mágicas que aconteceram.",
-                    "so i 'll just share with you some stories very quickly of some magical things "
-                    "that have happened .",
-                    "este é o primeiro livro que eu fiz.",
-                    "this is the first book i've ever done.",
-                ],
-                batch_size=self.training_args["batch_size"],
-                logger=self.logger)
+        run_test = local_training.build_tester(pretrainer, paragraph=[
+            "the history of raja ampat is steeped in history and mythology.",
+            "raja ampat was originally a part of an influential southeastern sultanate, the sultanate of tidore.",
+            "in 1562, it was captured by the dutch, who influenced much of its cuisines and its architecture.",
+            "that’s the more boring origin story.",
+            "a colorful local tale talks of a woman who was given seven precious eggs, of which four (‘ampat’ in bahasa indonesian) hatched into kings (‘raja’).",
+        ], logger=self.logger)
 
         # dataset
-        training_batches = dataset.setup_mlm_dataset(self.dataset_path, self.training_args,
-                pretrainer.tokenizer, logger=self.logger)
+        nsp_training_batches = dataset.setup_nsp_dataset(
+            self.nsp_dataset_path, self.nsp_training_args, logger=self.logger)
+        mlm_training_batches = dataset.setup_mlm_dataset(
+            self.mlm_dataset_path, self.mlm_training_args, logger=self.logger)
+
         if training_preprocessing is not None:
-            training_batches = training_preprocessing(training_batches)
+            nsp_training_batches = training_preprocessing(nsp_training_batches)
+            mlm_training_batches = training_preprocessing(mlm_training_batches)
 
         # training
-        train_batch, train_loss, train_accuracy = mlm.build_pretrainer(pretrainer, optimizer)
+        training_loss = tf.keras.metrics.Mean(name='training_loss')
+        training_accuracy = tf.keras.metrics.Mean(name='training_accuracy')
+        run_nsp_train, run_mlm_train = local_training.build_pretrainer(pretrainer, optimizer, training_loss, training_accuracy)
 
         nan_reporter = telemetry.detail_reporter(self.logger)
-        trainer = EpochPretrainer(
+        nsp_trainer = EpochPretrainer(
             EpochPretrainerInitBuilder().\
-                training_settings(self.training_settings).\
-                training_loss(train_loss).\
-                training_accuracy(train_accuracy).\
-                training_batches(training_batches).\
-                training_cb(lambda batch, lengths: train_batch(batch, lengths,
-                    mask_rate=self.training_args["mask_rate"])).\
+                training_settings(self.nsp_training_settings).\
+                training_loss(training_loss).\
+                training_accuracy(training_accuracy).\
+                training_batches(nsp_training_batches).\
+                training_cb(lambda batch: run_nsp_train(batch,
+                    mask_rate=self.nsp_training_args["mask_rate"])).\
+                ckpt_save_cb(lambda _: ckpt_manager.save(options=ckpt_options)).build())
+        mlm_trainer = EpochPretrainer(
+            EpochPretrainerInitBuilder().\
+                training_settings(self.mlm_training_settings).\
+                training_loss(training_loss).\
+                training_accuracy(training_accuracy).\
+                training_batches(mlm_training_batches).\
+                training_cb(lambda batch: run_mlm_train(batch,
+                    mask_rate=self.mlm_training_args["mask_rate"])).\
                 ckpt_save_cb(lambda _: ckpt_manager.save(options=ckpt_options)).build())
 
         # --------- Training ---------
-        for epoch in range(self.training_settings["epochs"]):
+        nepochs = max(self.nsp_training_settings["epochs"], self.mlm_training_settings["epochs"])
+        epochs_per_save = max(self.nsp_training_settings["epochs_per_save"], self.mlm_training_settings["epochs_per_save"])
+        epochs_per_test = max(self.nsp_training_settings["epochs_per_test"], self.mlm_training_settings["epochs_per_test"])
+        self.logger.info('running for %d epochs, saves %d epochs, tests %d epochs', nepochs, epochs_per_save, epochs_per_test)
+        for epoch in range(nepochs):
             start = time.time()
             sublogger = telemetry.PrefixAdapter(self.logger, 'Epoch {}'.format(epoch+1))
-            trainer.run_epoch(logger=sublogger, nan_reporter=nan_reporter,
+            nsp_trainer.run_epoch(logger=sublogger, nan_reporter=nan_reporter,
+                report_metric=report_metric)
+            mlm_trainer.run_epoch(logger=sublogger, nan_reporter=nan_reporter,
                 report_metric=report_metric)
 
-            if (epoch + 1) % self.training_settings["epochs_per_save"] == 0:
-                self.logger.info('Saving checkpoint for epoch %d at %s',
-                        epoch+1, ckpt_manager.save(options=ckpt_options))
+            if (epoch + 1) % epochs_per_save == 0:
+                self.logger.info('Saving checkpoint for epoch %d at %s', epoch+1, ckpt_manager.save(options=ckpt_options))
 
-            if (epoch + 1) % self.training_settings["epochs_per_test"] == 0:
+            if (epoch + 1) % epochs_per_test == 0:
                 run_test() # run every epoch
 
-            self.logger.info('Epoch %d Loss %.4f Accuracy %.4f',
-                    epoch+1, train_loss.result(), train_accuracy.result())
+            self.logger.info('Epoch %d Loss %.4f Accuracy %.4f', epoch+1, training_loss.result(), training_accuracy.result())
             self.logger.info('Time taken for 1 epoch: %.2f secs', time.time() - start)
 
         pretrainer.save(os.path.join(self.outdir, model_id))

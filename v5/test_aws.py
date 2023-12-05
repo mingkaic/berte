@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-This tests pretrain locally
+This runs pretrain_mlm or pretrain_nsp on the aws machine on test mode.
+No metric reporting.
 """
 # standard packages
-import os.path
-
-import shutil
-import psutil
+import logging
+import os
 
 # installed packages
+import tensorflow as tf
+
 # aws packages
 import boto3
 
@@ -16,40 +17,42 @@ import boto3
 import aws_common.init as init
 from aws_common.instance import get_instance
 
+_instance_info = get_instance()
 S3_BUCKET = 'bidi-enc-rep-trnsformers-everywhere'
 S3_DIR = 'v5'
 CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
 ID = 'pretraining'
-OUTDIR = 'out'
-MODEL_ID = 'berte_pretrain'
+INSTANCE_ID = _instance_info['instance_id']
+EC2_REGION = _instance_info['ec2_region']
 
 syncer = init.S3BucketSyncer(S3_BUCKET)
 syncer.download_if_notfound('configs', os.path.join(S3_DIR, ID, 's3_configs.tar.gz'))
 syncer.download_if_notfound('export', os.path.join(S3_DIR, ID, 's3_export.tar.gz'))
 syncer.download_if_notfound('intake', os.path.join(S3_DIR, ID, 's3_intake.tar.gz'))
 
-from common.pretrain import PretrainRunner, TrainingMethod
+# business logic
+from pretrain import PretrainerPipeline
+
+IN_MODEL_DIR = 'intake/berte_pretrain'
+OUTDIR = 'out'
+MODEL_ID = 'berte_pretrain'
+
+def shorten_ds(training_ds):
+    """ take 36 from the dataset """
+    return training_ds.take(36)
 
 if __name__ == '__main__':
-    ID = 'test'
-    MODEL_DIR = 'intake/berte_pretrain'
+    if not os.path.exists(OUTDIR):
+        os.makedirs(OUTDIR)
 
-    process = psutil.Process()
-    print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
+    logger = init.create_logger(ID, CLOUDWATCH_GROUP, EC2_REGION)
+    logger.setLevel(logging.INFO)
 
-    PretrainRunner('aws', CLOUDWATCH_GROUP, '',
-            { 'group': CLOUDWATCH_GROUP, 'model_id': MODEL_ID },
-            training_methods=[
-                TrainingMethod('mlm', {
-                    'metric_name': 'berte',
-                    'dataset_config': "configs/mlm_dataset.yaml",
-                }),
-                TrainingMethod('nsp', {
-                    'metric_name': 'berte_nsp',
-                    'dataset_config': "configs/nsp_dataset.yaml",
-                }),
-            ]).sequence(3, MODEL_DIR, ID)
-    print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
-
-    shutil.rmtree(ID) # remove checkpoints
-    print(str(process.memory_info().rss / (1024 * 1024 * 1024)) + 'GB')
+    PretrainerPipeline(logger, OUTDIR,
+             tokenizer_model=os.path.join(IN_MODEL_DIR, "tokenizer.model")).\
+    e2e(in_model_dir=IN_MODEL_DIR,
+        ckpt_id=MODEL_ID,
+        model_id=MODEL_ID,
+        ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'),
+        training_preprocessing=shorten_ds)
+    boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])
