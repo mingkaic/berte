@@ -19,7 +19,7 @@ from aws_common.telemetry import get_cloudwatch_metric_reporter
 
 _instance_info = get_instance()
 S3_BUCKET = 'bidi-enc-rep-trnsformers-everywhere'
-S3_DIR = 'v5'
+S3_DIR = 'v5.1'
 CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
 ID = 'pretraining'
 METRIC_NAME = 'berte'

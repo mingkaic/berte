@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-This runs pretrain_mlm or pretrain_nsp in an AWS instance
+This runs pretrain_mlm or pretrain_nsp on the aws machine on test mode.
+No metric reporting.
 """
 # standard packages
 import logging
@@ -15,14 +16,12 @@ import boto3
 # local packages
 import aws_common.init as init
 from aws_common.instance import get_instance
-from aws_common.telemetry import get_cloudwatch_metric_reporter
 
 _instance_info = get_instance()
 S3_BUCKET = 'bidi-enc-rep-trnsformers-everywhere'
-S3_DIR = 'v5'
+S3_DIR = 'v5.1'
 CLOUDWATCH_GROUP = 'bidi-enc-rep-trnsformers-everywhere'
 ID = 'pretraining'
-METRIC_NAME = 'berte'
 INSTANCE_ID = _instance_info['instance_id']
 EC2_REGION = _instance_info['ec2_region']
 
@@ -38,6 +37,10 @@ IN_MODEL_DIR = 'intake/berte_pretrain'
 OUTDIR = 'out'
 MODEL_ID = 'berte_pretrain'
 
+def shorten_ds(training_ds):
+    """ take 36 from the dataset """
+    return training_ds.take(36)
+
 if __name__ == '__main__':
     if not os.path.exists(OUTDIR):
         os.makedirs(OUTDIR)
@@ -51,6 +54,5 @@ if __name__ == '__main__':
         ckpt_id=MODEL_ID,
         model_id=MODEL_ID,
         ckpt_options=tf.train.CheckpointOptions(experimental_io_device='/job:localhost'),
-        report_metric=get_cloudwatch_metric_reporter(METRIC_NAME, 60))
-    syncer.tar_then_upload(OUTDIR, os.path.join(S3_DIR, ID), 'out.tar.gz')
+        training_preprocessing=shorten_ds)
     boto3.client('ec2', region_name=EC2_REGION).stop_instances(InstanceIds=[INSTANCE_ID])
