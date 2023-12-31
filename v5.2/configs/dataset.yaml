@@ -1,0 +1,7 @@
+tfds_name: "pass"
+args:
+    buffer_size: 20000
+    batch_size: 32
+settings:
+    epochs: 5
+    epochs_per_save: 1

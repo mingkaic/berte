@@ -84,7 +84,7 @@ class Perceiver(tf.keras.Model):
 
 class Memory(tf.keras.Model):
     """
-    Perceiver are independent of vocab.
+    Memory encodes deep latent space.
     """
     def __init__(self, num_enc_layers, num_layers, memory_dim, params):
         super().__init__()
@@ -97,6 +97,7 @@ class Memory(tf.keras.Model):
         num_heads = params['num_heads']
         dff = params['dff']
         dropout_rate = params['dropout_rate']
+
         self.latent = tf.keras.initializers.GlorotNormal()(
                 shape=(self.memory_dim, self.model_dim))
         self.encoder = berts.Perceiver(num_enc_layers, params)
@@ -187,6 +188,7 @@ class MemoryProcessor(tf.keras.Model):
         """
         Model call implementation
         """
+
         # input.shape == (batch_size, x)
         # emb.shape == (batch_size, x, model_dim)
         emb = self.embedder(inputs, training)

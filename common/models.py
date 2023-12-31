@@ -42,6 +42,22 @@ def _scaled_dot_product_attention(query, key, value, mask):
 
     return output
 
+class Multiplex(tf.keras.Model):
+    """
+    Multiplex operates inputs against multiple channel models then joins them
+    """
+    def __init__(self, channels, joiner=tf.keras.layers.Add()):
+        super().__init__()
+        self.channels = channels
+        self.joiner = joiner
+
+    def call(self, x, *args, **kwargs):
+        """
+        Model call implementation
+        """
+        return self.joiner([channel(x, *args, **kwargs) if channel is not None else x
+            for channel in self.channels])
+
 class SwiGLU(tf.keras.layers.Layer):
     """
     SwiGLU activation: Swish(xW+b, beta) * (xV+b)
