@@ -205,12 +205,12 @@ class ImageExtrude(tf.keras.Model):
         self.perceiver = berts.Perceiver(1, params)
         self.extrude = _attention(self.model_dim, params)
 
-    def call(self, inputs, memory, orig_shape, training=False):
+    def call(self, inputs, latent, orig_shape, training=False):
         batch_size = orig_shape[0]
         h_dim = orig_shape[1]
         w_dim = orig_shape[2]
 
-        out = self.perceiver(memory, inputs, training)
+        out = self.perceiver(inputs, latent, training)
         out = tf.reshape(out, [batch_size, h_dim, w_dim, self.model_dim])
         out = self.extrude(out)
         return out
@@ -229,11 +229,12 @@ class MemoryImageProcessor(rw.SaveableModule):
     MemoryImageProcesso encoding latent space accepting images.
     """
     def __init__(self, model_path, params):
-        super().__init__(self, model_path, {
+        super().__init__(model_path, {
             'image_embed': rw.KerasReadWriter('image_embed', ImageEmbed, {
                 'model_dim': params['model_dim'],
                 'num_heads': params['num_heads'],
-                'attention_dim': params['attention_dim']}),
+                'attention_dim': params['attention_dim'],
+            }),
             'memory': rw.KerasReadWriter('memory', local_model.Memory,
                 params['num_mem_enc_layers'],
                 params['num_mem_layers'],
@@ -247,7 +248,11 @@ class MemoryImageProcessor(rw.SaveableModule):
             'image_extrude': rw.KerasReadWriter('image_extrude', ImageExtrude, {
                 'model_dim': params['model_dim'],
                 'num_heads': params['num_heads'],
-                'attention_dim': params['attention_dim']}),
+                'attention_dim': params['attention_dim'],
+                'dff': params['dff'],
+                'dropout_rate': params['dropout_rate'],
+                'use_bias': True,
+            }),
         })
 
         self.emb = self.elems['image_embed']
@@ -263,7 +268,7 @@ class MemoryImageProcessor(rw.SaveableModule):
         # emb.shape == (batch_size, h_dim * w_dim, model_dim)
         emb = self.emb(inputs)
         # mem.shape == (batch_size, memory_dim, model_dim)
-        mem = self.memory(emb, training)
+        mem = self.mem(emb, training)
         # ext.shape == (batch_size, h_dim, w_dim, model_dim)
         ext = self.ext(mem, emb, tf.shape(inputs), training)
         return ext
@@ -307,17 +312,28 @@ class TextBert(rw.SaveableModule):
     """
     def __init__(self, model_path, optimizer, params, tokenizer_setup):
         super().__init__(model_path, {
-            'text_metadata': rw.FileReadWriter('text_metadata'),
+            'text_metadata': rw.FileReadWriter('text_metadata',
+                lambda metadata: metadata.update({
+                    'optimizer_iter': int(optimizer.iterations.numpy()),
+                }) if optimizer is not None else None),
             'tokenizer': tokenizer_rw(tokenizer_setup, os.path.join(model_path, 'text_metadata')),
             'memory_processor': rw.SModuleReadWriter('memory_processor',
                 MemoryTextProcessor, params),
             'text_predictor': text_predictor_rw(params),
         })
 
+        self.model_path = model_path
+        self.optimizer = optimizer # todo use
+        self.params = params
+        self.tokenizer_setup = tokenizer_setup
+
         self.metadata = self.elems['text_metadata']
         self.tokenizer = self.elems['tokenizer']
         self.processor = self.elems['memory_processor']
         self.predictor = self.elems['text_predictor']
+
+        if optimizer is not None:
+            optimizer.iterations.assign(int(self.metadata.get('optimizer_iter', 0)))
 
     def tokenize(self, sentence):
         """ use pretrainer tokenizer """
@@ -326,14 +342,35 @@ class TextBert(rw.SaveableModule):
             out = out.to_tensor()
         return out
 
+    def call(self, inputs, training=False):
+        """
+        Layer call implementation
+        """
+
+        enc = self.processor(inputs, training=training)
+        pred, debug_info = self.predictor(enc)
+        debug_info.update({'prediction.prediction': pred})
+        return (pred, debug_info)
+
     def predict(self, tokens, training=False):
         """ deduce the tokens replaced by <mask> """
         assert isinstance(tokens, tf.Tensor)
 
-        enc = self.processor(tokens, training=training)
-        pred, debug_info = self.predictor(enc)
-        debug_info.update({'prediction.prediction': pred})
-        return (pred, debug_info)
+        return self.call(tokens, training)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'model_path': self.model_path,
+            'optimizer': self.optimizer,
+            'params': self.params,
+            'tokenizer_setup': self.tokenizer_setup,
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 class UnetDown(tf.keras.Model):
     def __init__(self, params):
@@ -368,7 +405,7 @@ class UnetDown(tf.keras.Model):
         ]
         self.attn = _conv_next_block(mid_dim, model_dim, mult=convnext_mult)
 
-    def call(self, inputs, training=False):
+    def call(self, inputs):
         """
         Layer call implementation
         """
@@ -397,69 +434,25 @@ class UnetDown(tf.keras.Model):
     def from_config(cls, config):
         return cls(**config)
 
-def unet_down_rw(params):
-    if params is None:
-        return rw.KerasReadWriter('image_unetd', UnetDown)
-
-    return rw.KerasReadWriter('image_unetd', UnetDown,
-            berts.perceiver_init_builder().\
-                    model_dim(params['model_dim']).\
-                    num_heads(params['num_heads']).\
-                    dff(params['dff']).\
-                    dropout_rate(params['dropout_rate']).\
-                    use_bias(True).build())
-
-class ImageUnet(rw.SaveableModule):
-    def __init__(
-        self,
-        dim,
-        params,
-        init_dim=None,
-        out_dim=None,
-        dim_mults=(1, 2, 4, 8),
-        channels=3,
-        convnext_mult=2,
-    ):
+class UnetUp(tf.keras.Model):
+    def __init__(self, out_dim, params):
         super().__init__()
 
-        if init_dim is None:
-            init_dim = dim // 3 * 2
-
-        if out_dim is None:
-            out_dim = channels
-
-        self.dim = dim
         self.params = params
-        self.init_dim = init_dim
-        self.out_dim = out_dim
-        self.dim_mults = dim_mults
-        self.channels = channels
-        self.convnext_mult = convnext_mult
 
-        dims = [init_dim] + [dim * m for m in dim_mults]
+        model_dim = params['model_dim']
+        unet_dim = params['unet_dim']
+        dim_mults = params['dim_mults']
+        convnext_mult = params['convnext_mult']
+        init_dim = params.get('init_dim', None)
+        if init_dim is None:
+            init_dim = unet_dim // 3 * 2
+
+        dims = [init_dim] + [unet_dim * m for m in dim_mults]
         in_out = list(zip(dims[:-1], dims[1:]))
         mid_dim = dims[-1]
 
-        self.init_conv = tf.keras.layers.Conv2D(init_dim, 7, padding='same')
-
-        self.downs = [
-            tf.keras.Sequential([
-                _conv_next_block(dim_in, dim_out, mult=convnext_mult),
-                _conv_next_block(dim_out, dim_out, mult=convnext_mult),
-                _linear_attention(dim_out, params),
-            ])
-            for dim_in, dim_out in in_out
-        ]
-        self.downsamples = [
-            _downsample(dim_out)
-            for _, dim_out in in_out[:-1]
-        ]
-        model_dim = params['model_dim']
-        self.mid_block1 = _conv_next_block(mid_dim, model_dim, mult=convnext_mult)
-
-        self.mem = MemoryImageProcessor('', params)
-
-        self.mid_block2 = _conv_next_block(model_dim, mid_dim, mult=convnext_mult)
+        self.attn = _conv_next_block(model_dim, mid_dim, mult=convnext_mult)
         self.ups = [
             tf.keras.Sequential([
                 _conv_next_block(dim_out * 2, dim_in, mult=convnext_mult),
@@ -469,49 +462,88 @@ class ImageUnet(rw.SaveableModule):
             ])
             for dim_in, dim_out in in_out[:0:-1]
         ]
-
-        self.final_conv = tf.keras.Sequential([
-            _conv_next_block(dim, dim, mult=convnext_mult),
+        self.final = tf.keras.Sequential([
+            _conv_next_block(unet_dim, unet_dim, mult=convnext_mult),
             tf.keras.layers.Conv2D(out_dim, 1),
         ])
+
+    def call(self, inputs, hiddens):
+        """
+        Layer call implementation
+        """
+
+        dec = self.attn(inputs)
+
+        for uplayer in self.ups:
+            dec = uplayer(tf.concat([dec, hiddens.pop()], -1))
+
+        out = self.final(dec)
+        return out
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'params': self.params,
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
+class ImageUnet(rw.SaveableModule):
+    def __init__(
+        self,
+        model_path,
+        out_dim,
+        optimizer,
+        params,
+    ):
+        super().__init__(model_path, {
+            'image_metadata': rw.FileReadWriter('image_metadata',
+                lambda metadata: metadata.update({
+                    'optimizer_iter': int(optimizer.iterations.numpy()),
+                }) if optimizer is not None else None),
+            'image_unetd': rw.KerasReadWriter('image_unetd', UnetDown, params),
+            'memory_processor': rw.SModuleReadWriter('memory_processor',
+                MemoryImageProcessor, params),
+            'image_unetu': rw.KerasReadWriter('image_unetu', UnetUp, out_dim, params),
+        })
+
+        self.model_path = model_path
+        self.out_dim = out_dim
+        self.optimizer = optimizer
+        self.params = params
+
+        self.metadata = self.elems['image_metadata']
+        self.unetd = self.elems['image_unetd']
+        self.mem = self.elems['memory_processor']
+        self.unetu = self.elems['image_unetu']
+
+        if optimizer is not None:
+            optimizer.iterations.assign(int(self.metadata.get('optimizer_iter', 0)))
 
     def call(self, inputs, training=False):
         """
         Layer call implementation
         """
 
-        inputs = tf.ensure_shape(inputs, [None, None, None, self.channels])
+        enc, hiddens = self.unetd(inputs)
+        mem = self.mem(enc, training)
+        dec = self.unetu(mem, hiddens)
+        return dec
 
-        enc = self.init_conv(inputs)
+    def predict(self, inputs, training=False):
 
-        hiddens = []
-        for (downlayer, downsample) in zip(self.downs, self.downsamples):
-            enc = downlayer(enc)
-            hiddens.append(enc)
-            enc = downsample(enc)
-        enc = self.downs[-1](enc)
-        hiddens.append(enc)
-
-        mem = self.mid_block1(enc)
-        mem = self.mem(mem, training)
-        dec = self.mid_block2(mem)
-
-        for uplayer in self.ups:
-            dec = uplayer(tf.concat([dec, hiddens.pop()], -1))
-
-        out = self.final_conv(dec)
-        return out
+        return self.call(inputs, training)
 
     def get_config(self):
         config = super().get_config()
         config.update({
-            'dim':           self.dim,
-            'params':        self.params,
-            'init_dim':      self.init_dim,
-            'out_dim':       self.out_dim,
-            'dim_mults':     self.dim_mults,
-            'channels':      self.channels,
-            'convnext_mult': self.convnext_mult,
+            'model_path': self.model_path,
+            'out_dim':    self.out_dim,
+            'optimizer': self.optimizer,
+            'params':     self.params,
         })
         return config
 

@@ -1,9 +1,0 @@
-model_args:
-    model_dim: 256
-    memory_dim: 512
-    num_heads: 8
-    dff: 512
-    dropout_rate: 0.4
-    num_mem_enc_layers: 2
-    num_mem_layers: 3
-    attention_dim: 256

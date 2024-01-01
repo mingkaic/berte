@@ -149,7 +149,7 @@ if __name__ == '__main__':
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    with open("configs/berte_pretrain.yaml") as file:
+    with open("configs/bert_pretrain.yaml") as file:
         _args = yaml.safe_load(file.read())
         tokenizer_setup = _args["tokenizer_args"]
         params = _args["model_args"]
