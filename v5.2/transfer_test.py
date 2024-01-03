@@ -1,3 +1,4 @@
+import os
 import logging
 
 import tensorflow as tf
@@ -10,8 +11,10 @@ import transfer
 
 if __name__ == '__main__':
     MODEL = 'intake2/berte_pretrain'
+    TMP_DIR = 'transfer_tmp'
 
-    logging.basicConfig(filename="converter.log",
+    os.makedirs(TMP_DIR, exist_ok=True)
+    logging.basicConfig(filename=os.path.join(TMP_DIR, 'converter.log'),
                         format='%(asctime)s %(message)s',
                         filemode='w')
     logger = logging.getLogger()
@@ -22,7 +25,6 @@ if __name__ == '__main__':
             beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
     bert = model.TextBert(MODEL, optimizer, None, None)
-
     run_test = transfer.build_tester(bert, paragraph=[
         "the history of raja ampat is steeped in history and mythology.",
         "raja ampat was originally a part of an influential southeastern sultanate, the sultanate of tidore.",
@@ -30,4 +32,6 @@ if __name__ == '__main__':
         "that’s the more boring origin story.",
         "a colorful local tale talks of a woman who was given seven precious eggs, of which four (‘ampat’ in bahasa indonesian) hatched into kings (‘raja’).",
     ], logger=logger)
+    tb_callback = tf.keras.callbacks.TensorBoard(os.path.join(TMP_DIR, 'textbert'))
+    tb_callback.set_model(bert)
     run_test()

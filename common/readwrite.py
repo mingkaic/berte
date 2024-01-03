@@ -5,7 +5,6 @@ import json
 from abc import ABC, abstractmethod
 
 import tensorflow as tf
-import tensorflow_text as text
 
 def _copy_unowned(dst_dir, src_dir, owned_files):
     files = os.listdir(src_dir)
@@ -19,12 +18,12 @@ def _copy_unowned(dst_dir, src_dir, owned_files):
             else:
                 shutil.copytree(src, dst)
 
-class SaveableModule(tf.Module):
+class StructuredModel(tf.keras.Model):
     """
-    _saveableModule save and load elements of this module in a structured directory.
+    StructuredModel save and load elements of this module in a structured directory.
     """
-    def __init__(self, src_dir, rws):
-        super().__init__()
+    def __init__(self, src_dir, rws, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.src_dir = src_dir
         self.rws = rws
@@ -34,25 +33,22 @@ class SaveableModule(tf.Module):
             for elem_key in rws
         }
 
-    def __call__(self, *args, **kwargs):
-        return self.call(*args, **kwargs)
-
-    def save(self, dst_dir):
+    def save(self, filepath, overwrite=True, save_format=None, **kwargs):
         """
         save models under model_path
         """
 
-        if not os.path.exists(dst_dir):
-            os.makedirs(dst_dir, exist_ok=True)
+        if not os.path.exists(filepath):
+            os.makedirs(filepath, exist_ok=True)
 
         owned_files = []
         for elem_key in self.rws:
             writer = self.rws[elem_key]
-            writer.save(self.elems[elem_key], dst_dir)
+            writer.save(self.elems[elem_key], filepath)
             owned_files += writer.owned_files()
 
         if os.path.exists(self.src_dir):
-            _copy_unowned(dst_dir, self.src_dir, owned_files)
+            _copy_unowned(filepath, self.src_dir, owned_files)
 
 class SubmoduleReadWriter(ABC):
     """
@@ -114,9 +110,9 @@ class KerasReadWriter(SubmoduleReadWriter):
 
         return [self.directory]
 
-class SModuleReadWriter(SubmoduleReadWriter):
+class SModelReadWriter(SubmoduleReadWriter):
     """
-    SModuleReadWriter saves and loads from other SaveableModule
+    SModelReadWriter saves and loads from other StructuredModel
     """
     def __init__(self, directory, smodel, *args, **kwargs):
 
@@ -156,6 +152,7 @@ class SaveableTokenizer:
 
     def __init__(self, src, tokenizer_setup):
 
+        import tensorflow_text as text
         self.src = src
         if os.path.exists(src+'.model'):
             with open(src+'.model', 'rb') as file:

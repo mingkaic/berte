@@ -61,11 +61,10 @@ def convert_textberte(src_path, optimizer, params, tokenizer_setup):
 def mask_lm(bert, tokens, mask_rate,
         donothing_prob=0.1, rand_prob=0.1):
     """ given padded tokens, return mask_rate portion of tokens """
-    assert(isinstance(tokens, np.ndarray))
 
     mask = int(bert.metadata['mask'])
     lengths = np.array([len(sent) for sent in tokens])
-    sizes = np.floor(mask_rate * lengths).astype(np.int)
+    sizes = np.floor(mask_rate * lengths).astype(np.int32)
 
     out = []
     for (sent, size, length) in zip(tokens, sizes, lengths):
@@ -116,7 +115,7 @@ def select_sentence_pairs(bert, token_windows, batch_size, window_size):
 def build_tester(bert, paragraph, logger, batch_size=15, mask_rate=0.15):
     """ build_tester returns a callable that tests the samples """
     window_size = len(paragraph)
-    intokens = np.array([bert.tokenize(sentence).numpy() for sentence in paragraph])
+    intokens = [bert.tokenize(sentence).numpy() for sentence in paragraph]
     masked = mask_lm(bert, intokens, mask_rate)
     masked_window = [masked] * batch_size
     tokens, s1_indices, s2_indices =\
@@ -142,8 +141,10 @@ def build_tester(bert, paragraph, logger, batch_size=15, mask_rate=0.15):
 if __name__ == '__main__':
     SRC = 'intake/berte_pretrain'
     DST = 'intake2/berte_pretrain'
+    TMP_DIR = 'transfer_tmp'
 
-    logging.basicConfig(filename="converter.log",
+    os.makedirs(TMP_DIR, exist_ok=True)
+    logging.basicConfig(filename=os.path.join(TMP_DIR, 'converter.log'),
                         format='%(asctime)s %(message)s',
                         filemode='w')
     logger = logging.getLogger()

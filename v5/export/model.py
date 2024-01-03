@@ -10,7 +10,6 @@ import functools
 
 import sentencepiece as sp
 import tensorflow as tf
-import tensorflow_text as text
 
 import common.berts as berts
 
@@ -389,6 +388,7 @@ class _commonPretrainer(tf.Module):
         self._copy_irrelevant(model_path)
 
 def _load_sentencepiece(fpath, tokenizer_setup):
+    import tensorflow_text as text
     with open(fpath+'.model', 'rb') as file:
         return text.SentencepieceTokenizer(
                 model=file.read(),

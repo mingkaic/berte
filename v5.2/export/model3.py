@@ -4,6 +4,7 @@ This module includes unet specific models
 """
 import os
 import json
+from packaging import version
 
 import tensorflow as tf
 
@@ -14,6 +15,12 @@ import common.readwrite as rw
 
 import export.model as local_model
 
+if version.parse(tf.__version__) < version.parse('2.11.0'):
+    import tensorflow_addons as tfa
+    GroupNorm = tfa.layers.GroupNormalization
+else:
+    GroupNorm = tf.keras.layers.GroupNormalization
+
 def _upsample(dim):
     return tf.keras.layers.Conv2DTranspose(dim, 4, strides=(2,2), padding='same')
 
@@ -22,7 +29,7 @@ def _downsample(dim):
 
 def _linear_attention(dim, params):
     return models.Multiplex([None, tf.keras.Sequential([
-        tf.keras.layers.GroupNormalization(1),
+        GroupNorm(1),
         diffs.ConvAttention(dim,
             diffs.attention_init_builder().\
                 num_heads(params['num_heads']).\
@@ -32,7 +39,7 @@ def _linear_attention(dim, params):
 
 def _attention(dim, params):
     return models.Multiplex([None, tf.keras.Sequential([
-        tf.keras.layers.GroupNormalization(1),
+        GroupNorm(1),
         diffs.ConvAttention(dim,
             diffs.attention_init_builder().\
                 num_heads(params['num_heads']).\
@@ -41,23 +48,24 @@ def _attention(dim, params):
     ])])
 
 def _conv_next_block(dim_in, dim, mult=2, activation='gelu'):
-    """
-    https://arxiv.org/abs/2201.03545
-    """
+    # https://arxiv.org/abs/2201.03545
     return models.Multiplex([
         tf.keras.Sequential([
             tf.keras.layers.Conv2D(dim_in, 7, padding='same', groups=dim_in),
-            tf.keras.layers.GroupNormalization(1),
+            GroupNorm(1),
             tf.keras.layers.Conv2D(dim * mult, 3, padding='same', activation=activation),
-            tf.keras.layers.GroupNormalization(1),
+            GroupNorm(1),
             tf.keras.layers.Conv2D(dim, 3, padding='same'),
         ]),
         tf.keras.layers.Conv2D(dim, 1, padding='valid') if dim_in != dim else None,
     ])
 
 class TextEmbed(tf.keras.Model):
+    """
+    TextEmbed accepts tokens and encodes into latent memory
+    """
     def __init__(self, params):
-        super().__init__(self)
+        super().__init__(params)
 
         self.params = params
 
@@ -81,6 +89,10 @@ class TextEmbed(tf.keras.Model):
         tf.TensorSpec(shape=None, dtype=tf.bool),
     ])
     def call(self, inputs, training=False):
+        """
+        Model call implementation
+        """
+
         # input.shape == (batch_size, x)
         # emb.shape == (batch_size, x, model_dim)
         emb = self.embedder(inputs, training)
@@ -88,16 +100,7 @@ class TextEmbed(tf.keras.Model):
         enc = self.encoder(emb, berts.create_padding_mask(inputs), training)
         return enc
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({ 'params': self.params })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
-def memory_rw(params):
+def _memory_rw(params):
     if params is None:
         return rw.KerasReadWriter('memory', local_model.Memory)
 
@@ -112,7 +115,7 @@ def memory_rw(params):
                     dropout_rate(params['dropout_rate']).\
                     use_bias(True).build())
 
-def text_extruder_rw(params):
+def _text_extruder_rw(params):
     if params is None:
         return rw.KerasReadWriter('text_decoder', local_model.Perceiver)
 
@@ -125,16 +128,16 @@ def text_extruder_rw(params):
                     dropout_rate(params['dropout_rate']).\
                     use_bias(True).build())
 
-class MemoryTextProcessor(rw.SaveableModule):
+class MemoryTextProcessor(rw.StructuredModel):
     """
     MemoryTextProcessor encoding latent space accepting texts.
     """
     def __init__(self, model_path, params):
         super().__init__(model_path, {
             'text_embedder': rw.KerasReadWriter('text_embedder', TextEmbed, params),
-            'memory': memory_rw(params),
-            'text_extruder': text_extruder_rw(params),
-        })
+            'memory': _memory_rw(params),
+            'text_extruder': _text_extruder_rw(params),
+        }, params)
 
         self.model_path = model_path
         self.params = params
@@ -162,18 +165,12 @@ class MemoryTextProcessor(rw.SaveableModule):
 
         return out
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({ 'model_path': self.model_path, 'params': self.params })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
 class ImageEmbed(tf.keras.Model):
+    """
+    ImageEmbed takes UnetDown latent image into latent memory
+    """
     def __init__(self, params):
-        super().__init__(self)
+        super().__init__(params)
 
         self.params = params
 
@@ -184,20 +181,18 @@ class ImageEmbed(tf.keras.Model):
         ])
 
     def call(self, inputs):
+        """
+        Model call implementation
+        """
+
         return self.emb(inputs)
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({ 'params': self.params })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
 class ImageExtrude(tf.keras.Model):
+    """
+    ImageExtrude takes latent memory to latent image for UnetUp
+    """
     def __init__(self, params):
-        super().__init__(self)
+        super().__init__(params)
 
         self.params = params
 
@@ -206,6 +201,10 @@ class ImageExtrude(tf.keras.Model):
         self.extrude = _attention(self.model_dim, params)
 
     def call(self, inputs, latent, orig_shape, training=False):
+        """
+        Model call implementation
+        """
+
         batch_size = orig_shape[0]
         h_dim = orig_shape[1]
         w_dim = orig_shape[2]
@@ -215,16 +214,7 @@ class ImageExtrude(tf.keras.Model):
         out = self.extrude(out)
         return out
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({ 'params': self.params })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
-class MemoryImageProcessor(rw.SaveableModule):
+class MemoryImageProcessor(rw.StructuredModel):
     """
     MemoryImageProcesso encoding latent space accepting images.
     """
@@ -253,7 +243,7 @@ class MemoryImageProcessor(rw.SaveableModule):
                 'dropout_rate': params['dropout_rate'],
                 'use_bias': True,
             }),
-        })
+        }, params)
 
         self.emb = self.elems['image_embed']
         self.mem = self.elems['memory']
@@ -273,16 +263,7 @@ class MemoryImageProcessor(rw.SaveableModule):
         ext = self.ext(mem, emb, tf.shape(inputs), training)
         return ext
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({ 'model_path': self.model_path, 'params': self.params })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
-def tokenizer_rw(tokenizer_setup, metadata_path):
+def _tokenizer_rw(tokenizer_setup, metadata_path):
     if tokenizer_setup is None:
         if os.path.exists(metadata_path):
             with open(metadata_path, 'r') as file:
@@ -299,82 +280,19 @@ def tokenizer_rw(tokenizer_setup, metadata_path):
             }
     return rw.TokenizerReadWriter('tokenizer', tokenizer_setup)
 
-def text_predictor_rw(params):
+def _text_predictor_rw(params):
     if params is None:
         return rw.KerasReadWriter('text_predictor', local_model.Predictor)
 
     return rw.KerasReadWriter('text_predictor', local_model.Predictor,
             params['model_dim'], params['vocab_size'])
 
-class TextBert(rw.SaveableModule):
-    """
-    TextBert handles text transformation
-    """
-    def __init__(self, model_path, optimizer, params, tokenizer_setup):
-        super().__init__(model_path, {
-            'text_metadata': rw.FileReadWriter('text_metadata',
-                lambda metadata: metadata.update({
-                    'optimizer_iter': int(optimizer.iterations.numpy()),
-                }) if optimizer is not None else None),
-            'tokenizer': tokenizer_rw(tokenizer_setup, os.path.join(model_path, 'text_metadata')),
-            'memory_processor': rw.SModuleReadWriter('memory_processor',
-                MemoryTextProcessor, params),
-            'text_predictor': text_predictor_rw(params),
-        })
-
-        self.model_path = model_path
-        self.optimizer = optimizer # todo use
-        self.params = params
-        self.tokenizer_setup = tokenizer_setup
-
-        self.metadata = self.elems['text_metadata']
-        self.tokenizer = self.elems['tokenizer']
-        self.processor = self.elems['memory_processor']
-        self.predictor = self.elems['text_predictor']
-
-        if optimizer is not None:
-            optimizer.iterations.assign(int(self.metadata.get('optimizer_iter', 0)))
-
-    def tokenize(self, sentence):
-        """ use pretrainer tokenizer """
-        out = self.tokenizer.tokenize(sentence)
-        if not isinstance(out, tf.Tensor):
-            out = out.to_tensor()
-        return out
-
-    def call(self, inputs, training=False):
-        """
-        Layer call implementation
-        """
-
-        enc = self.processor(inputs, training=training)
-        pred, debug_info = self.predictor(enc)
-        debug_info.update({'prediction.prediction': pred})
-        return (pred, debug_info)
-
-    def predict(self, tokens, training=False):
-        """ deduce the tokens replaced by <mask> """
-        assert isinstance(tokens, tf.Tensor)
-
-        return self.call(tokens, training)
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            'model_path': self.model_path,
-            'optimizer': self.optimizer,
-            'params': self.params,
-            'tokenizer_setup': self.tokenizer_setup,
-        })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
 class UnetDown(tf.keras.Model):
+    """
+    UnetDown preps image into latent image through a series of convolutions and down samples
+    """
     def __init__(self, params):
-        super().__init__()
+        super().__init__(params)
 
         self.params = params
 
@@ -407,7 +325,7 @@ class UnetDown(tf.keras.Model):
 
     def call(self, inputs):
         """
-        Layer call implementation
+        Model call implementation
         """
 
         enc = self.init_conv(inputs)
@@ -423,20 +341,13 @@ class UnetDown(tf.keras.Model):
         out = self.attn(enc)
         return out, hiddens
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            'params': self.params,
-        })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
 class UnetUp(tf.keras.Model):
+    """
+    UnetUp preps latent image and UnetDown hidden outputs to an image through a series of
+    concatenatation, convolutions and up samples
+    """
     def __init__(self, out_dim, params):
-        super().__init__()
+        super().__init__(out_dim, params)
 
         self.params = params
 
@@ -469,7 +380,7 @@ class UnetUp(tf.keras.Model):
 
     def call(self, inputs, hiddens):
         """
-        Layer call implementation
+        Model call implementation
         """
 
         dec = self.attn(inputs)
@@ -480,18 +391,100 @@ class UnetUp(tf.keras.Model):
         out = self.final(dec)
         return out
 
+class TextBert(rw.StructuredModel):
+    """
+    TextBert handles text transformation for <mask> token prediction and distance prediction for
+    sentences separated by <sep>
+    """
+    def __init__(self, model_path, optimizer, params, tokenizer_setup):
+        super().__init__(model_path, {
+            'text_metadata': rw.FileReadWriter('text_metadata',
+                lambda metadata: metadata.update({
+                    'optimizer_iter': int(optimizer.iterations.numpy()), # update iterator value
+                }) if optimizer is not None else None),
+            'tokenizer': _tokenizer_rw(tokenizer_setup, os.path.join(model_path, 'text_metadata')),
+            'memory_processor': rw.SModelReadWriter('memory_processor',
+                MemoryTextProcessor, params),
+            'text_predictor': _text_predictor_rw(params),
+        }, optimizer, params, tokenizer_setup)
+
+        self.model_path = model_path
+        self.optimizer = optimizer # todo use
+        self.params = params
+        self.tokenizer_setup = tokenizer_setup
+
+        self.metadata = self.elems['text_metadata']
+        self.tokenizer = self.elems['tokenizer']
+        self.processor = self.elems['memory_processor']
+        self.predictor = self.elems['text_predictor']
+
+        if optimizer is not None:
+            opt_iter = int(self.metadata.get('optimizer_iter', 0))
+            optimizer.iterations.assign(opt_iter)
+
+    def tokenize(self, sentence):
+        """
+        tokenize text string use pretrainer tokenizer
+        """
+
+        out = self.tokenizer.tokenize(sentence)
+        if not isinstance(out, tf.Tensor):
+            out = out.to_tensor()
+        return out
+
+    def predict(self, tokens, training=False):
+        """
+        predict deduce the tokens replaced by <mask> and determine the distance between sentences
+        separated by <sep>
+        """
+
+        assert isinstance(tokens, tf.Tensor)
+        return self.call(tokens, training)
+
+    def sentence_distance(self, distance, max_distance):
+        """
+        sentence_distance determines the token class mapped by the distance
+        """
+
+        return (distance * local_model.DISTANCE_CLASS) / max_distance
+
+    def call(self, inputs, training=False):
+        """
+        Model call implementation
+        """
+
+        enc = self.processor(inputs, training=training)
+        pred, debug_info = self.predictor(enc)
+        debug_info.update({'prediction.prediction': pred})
+        return (pred, debug_info)
+
     def get_config(self):
+        """
+        Module get_config implementation
+        """
+
         config = super().get_config()
         config.update({
+            'model_path': self.model_path,
+            'optimizer': self.optimizer,
             'params': self.params,
+            'tokenizer_setup': self.tokenizer_setup,
         })
         return config
 
     @classmethod
     def from_config(cls, config):
+        """
+        Module from_config implementation
+        """
+
         return cls(**config)
 
-class ImageUnet(rw.SaveableModule):
+class ImageBert(rw.StructuredModel):
+    """
+    ImageBert uses unet transformation techniques to encode images into latent memory and back to
+    predict image noise
+    """
     def __init__(
         self,
         model_path,
@@ -505,10 +498,10 @@ class ImageUnet(rw.SaveableModule):
                     'optimizer_iter': int(optimizer.iterations.numpy()),
                 }) if optimizer is not None else None),
             'image_unetd': rw.KerasReadWriter('image_unetd', UnetDown, params),
-            'memory_processor': rw.SModuleReadWriter('memory_processor',
+            'memory_processor': rw.SModelReadWriter('memory_processor',
                 MemoryImageProcessor, params),
             'image_unetu': rw.KerasReadWriter('image_unetu', UnetUp, out_dim, params),
-        })
+        }, out_dim, optimizer, params)
 
         self.model_path = model_path
         self.out_dim = out_dim
@@ -523,30 +516,19 @@ class ImageUnet(rw.SaveableModule):
         if optimizer is not None:
             optimizer.iterations.assign(int(self.metadata.get('optimizer_iter', 0)))
 
+    def predict(self, inputs, training=False):
+        """
+        predict the noise of noisy inputs
+        """
+
+        return self.call(inputs, training)
+
     def call(self, inputs, training=False):
         """
-        Layer call implementation
+        SaveModule call implementation
         """
 
         enc, hiddens = self.unetd(inputs)
         mem = self.mem(enc, training)
         dec = self.unetu(mem, hiddens)
         return dec
-
-    def predict(self, inputs, training=False):
-
-        return self.call(inputs, training)
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            'model_path': self.model_path,
-            'out_dim':    self.out_dim,
-            'optimizer': self.optimizer,
-            'params':     self.params,
-        })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)

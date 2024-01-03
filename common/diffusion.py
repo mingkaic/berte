@@ -1,6 +1,14 @@
+from packaging import version
+
 import tensorflow as tf
 
 from common.builder import Builder
+
+if version.parse(tf.__version__) < version.parse('2.11.0'):
+    import tensorflow_addons as tfa
+    GroupNorm = tfa.layers.GroupNormalization
+else:
+    GroupNorm = tf.keras.layers.GroupNormalization
 
 def _linear_attention(query, key, value, scale):
     query = tf.nn.softmax(query, axis=-2)
@@ -44,7 +52,7 @@ class ConvAttention(tf.keras.layers.Layer):
         self.qkv = tf.keras.layers.Conv2D(attention_dim * 3, 1, use_bias=False)
         self.out = tf.keras.Sequential([
             tf.keras.layers.Conv2D(model_dim, 1),
-            tf.keras.layers.GroupNormalization(1),
+            GroupNorm(1),
         ])
 
     def call(self, inputs):

@@ -15,6 +15,8 @@ from common.builder import Builder
 import export.model3 as model
 import export.training2 as local_training
 
+from pass_dataset_builder import Builder as PassBuilder
+
 NAN_LOSS_ERR_CODE = 1
 
 def epoch_pretrainer_init_builder():
@@ -67,7 +69,7 @@ class PretrainerPipeline:
 
         with open(dataset_config) as file:
             _args = yaml.safe_load(file.read())
-            self.builder = tfds.builder(_args['tfds_name'])
+            self.builder = PassBuilder() # tfds.builder(_args['tfds_name'])
             self.dataset_args = _args['args']
             self.training_settings = _args['settings']
 
@@ -87,7 +89,7 @@ class PretrainerPipeline:
             ckpt_options = tf.train.CheckpointOptions()
 
         self.logger.info('Model recovered from %s', in_model_dir)
-        unet = model.ImageUnet(in_model_dir, nchannels, optimizer, self.model_args)
+        unet = model.ImageBert(in_model_dir, nchannels, optimizer, self.model_args)
 
         ckpt = tf.train.Checkpoint(optimizer=optimizer, unet=unet)
         ckpt_manager = tf.train.CheckpointManager(ckpt,
@@ -111,9 +113,9 @@ class PretrainerPipeline:
 
         # dataset
         self.builder.download_and_prepare()
-        ds = (self.builder.as_dataset()
+        ds = (self.builder.as_dataset()['train']
                 .cache()
-                .map(transform)
+                .map(lambda row: transform(row['image']))
                 .shuffle(self.dataset_args['buffer_size'])
                 .batch(self.dataset_args['batch_size'])
                 .prefetch(tf.data.AUTOTUNE))
@@ -148,7 +150,7 @@ class PretrainerPipeline:
             epoch_pretrainer_init_builder().\
                 training_loss(training_loss).\
                 training_batches(training_batches).\
-                training(unet_train))
+                training(unet_train).build())
 
         # --------- Training ---------
         nepochs = self.training_settings['epochs']
