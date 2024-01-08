@@ -24,7 +24,13 @@ if __name__ == '__main__':
     optimizer = tf.keras.optimizers.legacy.Adam(learning_rate,
             beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
+    logdir = os.path.join(TMP_DIR, 'textbert')
+    writer = tf.summary.create_file_writer(logdir)
+    tf.summary.trace_on(graph=True, profiler=True)
+
     bert = model.TextBert(MODEL, optimizer, None, None)
+
+    # forward pass
     run_test = transfer.build_tester(bert, paragraph=[
         "the history of raja ampat is steeped in history and mythology.",
         "raja ampat was originally a part of an influential southeastern sultanate, the sultanate of tidore.",
@@ -32,6 +38,7 @@ if __name__ == '__main__':
         "that’s the more boring origin story.",
         "a colorful local tale talks of a woman who was given seven precious eggs, of which four (‘ampat’ in bahasa indonesian) hatched into kings (‘raja’).",
     ], logger=logger)
-    tb_callback = tf.keras.callbacks.TensorBoard(os.path.join(TMP_DIR, 'textbert'))
-    tb_callback.set_model(bert)
     run_test()
+
+    with writer.as_default():
+        tf.summary.trace_export(name='model_trace', step=0, profiler_outdir=logdir)

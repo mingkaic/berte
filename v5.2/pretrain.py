@@ -14,21 +14,20 @@ from common.builder import Builder
 
 import export.model3 as model
 import export.training2 as local_training
+from export.training import NAN_LOSS_ERR_CODE
 
 from pass_dataset_builder import Builder as PassBuilder
 
-NAN_LOSS_ERR_CODE = 1
-
 def epoch_pretrainer_init_builder():
     """ create Builder for EpochPretrainer init """
-    return Builder(['training_batches', 'training_loss', 'training'])
+    return Builder(['training_dataset', 'training_loss', 'training'])
 
 class EpochPretrainer:
     """ Reusable pretrainer for running training epochs """
     def __init__(self, args):
 
         self.training = args['training']
-        self.training_batches = args['training_batches']
+        self.training_dataset = args['training_dataset']
         self.training_loss = args['training_loss']
 
     def run_epoch(self, logger=None, nan_reporter=None, report_metric=None):
@@ -38,7 +37,7 @@ class EpochPretrainer:
             report_metric = telemetry.get_logger_metric_reporter(logger)
 
         self.training_loss.reset_states()
-        for i, batch in enumerate(self.training_batches):
+        for i, batch in enumerate(self.training_dataset):
             debug_info, err_code = self.training(batch)
             if err_code == NAN_LOSS_ERR_CODE:
                 if nan_reporter is not None:
@@ -89,7 +88,7 @@ class PretrainerPipeline:
             ckpt_options = tf.train.CheckpointOptions()
 
         self.logger.info('Model recovered from %s', in_model_dir)
-        unet = model.ImageBert(in_model_dir, nchannels, optimizer, self.model_args)
+        unet = model.ImageBertPreparer(in_model_dir, nchannels, optimizer, self.model_args)
 
         ckpt = tf.train.Checkpoint(optimizer=optimizer, unet=unet)
         ckpt_manager = tf.train.CheckpointManager(ckpt,
@@ -104,7 +103,7 @@ class PretrainerPipeline:
         return unet, ckpt_manager, optimizer
 
     def setup_dataset(self, unet):
-        image_size = unet.params['unet_dim']
+        image_size = unet.params['image_dim']
         transform = tf.keras.Sequential([
             tf.keras.layers.Resizing(image_size, image_size),
             tf.keras.layers.CenterCrop(image_size, image_size),
@@ -136,10 +135,10 @@ class PretrainerPipeline:
                 ckpt_id, ckpt_options, in_model_dir, nchannels)
 
         # dataset
-        training_batches = self.setup_dataset(unet)
+        training_dataset = self.setup_dataset(unet)
 
         if training_preprocessing is not None:
-            training_batches = training_preprocessing(training_batches)
+            training_dataset = training_preprocessing(training_dataset)
 
         # training
         training_loss = tf.keras.metrics.Mean(name='training_loss')
@@ -149,7 +148,7 @@ class PretrainerPipeline:
         trainer = EpochPretrainer(
             epoch_pretrainer_init_builder().\
                 training_loss(training_loss).\
-                training_batches(training_batches).\
+                training_dataset(training_dataset).\
                 training(unet_train).build())
 
         # --------- Training ---------
@@ -168,6 +167,7 @@ class PretrainerPipeline:
             self.logger.info('Epoch %d Loss %.4f', epoch+1, training_loss.result())
             self.logger.info('Time taken for 1 epoch: %.2f secs', time.time() - start)
 
+        print('saving model')
         unet.save(os.path.join(self.outdir, model_id))
         return unet
 

@@ -5,6 +5,8 @@ from tqdm.auto import tqdm
 from common.training import CustomSchedule
 from common.schedule import linear_beta_schedule
 
+from export.training import NAN_LOSS_ERR_CODE
+
 def extract(a, t, x_shape):
     out = tf.gather(a, t, axis=-1)
     for _ in range(len(x_shape) - 1):
@@ -13,8 +15,10 @@ def extract(a, t, x_shape):
 
 class UnetTrainer:
     def __init__(self, unet, optimizer, training_loss,
-            timesteps_limit=200,
-            loss_f=tf.keras.losses.Huber()):
+                 timesteps_limit=200,
+                 loss_f=tf.keras.losses.Huber()):
+
+        self.training_loss = training_loss
 
         self.timesteps_limit = timesteps_limit
         self.loss_f = loss_f
@@ -42,14 +46,32 @@ class UnetTrainer:
 
     def __call__(self, batch):
 
+        debug_info = dict()
+        with tf.GradientTape() as tape:
+            loss = self._train_step(batch)
+
+            if tf.math.is_nan(loss):
+                debug_info['bad_batch'] = loss
+                return debug_info, NAN_LOSS_ERR_CODE
+
+            gradients = tape.gradient(loss, self.unet.trainable_variables)
+
+        self.optimizer.apply_gradients(zip(gradients, self.unet.trainable_variables))
+        # update metrics
+        self.training_loss(loss)
+
+        return debug_info, 0
+
+    # generate a forward diffusion noisy image then predict through unet
+    def _train_step(self, batch):
         timestamp = tf.random.uniform([batch.shape[0]], 0, self.timesteps_limit,
                 tf.dtypes.int64)
-        noisy_batch, noise = self.q_sample(batch, timestamp)
+        noisy_batch, noise = self._q_sample(batch, timestamp)
         predicted_noise = self.unet(noisy_batch, training=True)
         return self.loss_f(noise, predicted_noise)
 
     # forward diffusion
-    def q_sample(self, x, t, noise=None):
+    def _q_sample(self, x, t, noise=None):
         if noise is None:
             noise = tf.random.normal(x.shape)
 

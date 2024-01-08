@@ -125,7 +125,8 @@ def build_tester(bert, paragraph, logger, batch_size=15, mask_rate=0.15):
 
     def tester():
         prediction, _ = bert.predict(tokens, training=False)
-        for s1, s2, tok, pred, dist_class in zip(s1_indices, s2_indices, tokens.numpy(), prediction.numpy(), distance_class):
+        for s1, s2, tok, pred, dist_class in zip(
+                s1_indices, s2_indices, tokens.numpy(), prediction.numpy(), distance_class):
             labels = np.argmax(pred, axis=-1).astype(np.int32)
             text = bert.tokenizer.detokenize(labels)
 

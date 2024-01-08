@@ -75,9 +75,9 @@ class SwiGLU(tf.keras.layers.Layer):
     ])
     def call(self, inputs):
         inputs = tf.ensure_shape(inputs, [None, None, self.in_size])
-        tmp = self.dense(inputs) # shape=[None, None, 2*in_size]
-        unsilued = tmp[:, :, :self.in_size]
-        silued = tmp[:, :, self.in_size:]
+        unsilued, silued = tf.split(
+                self.dense(inputs), 2, # shape=[None, None, 2*in_size]
+                axis=-1)
         return unsilued * tf.nn.silu(silued, beta=self.beta)
 
     def get_config(self):

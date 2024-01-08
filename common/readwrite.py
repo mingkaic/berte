@@ -22,8 +22,8 @@ class StructuredModel(tf.keras.Model):
     """
     StructuredModel save and load elements of this module in a structured directory.
     """
-    def __init__(self, src_dir, rws, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, src_dir, rws):
+        super().__init__()
 
         self.src_dir = src_dir
         self.rws = rws
