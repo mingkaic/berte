@@ -140,8 +140,8 @@ def build_tester(bert, paragraph, logger, batch_size=15, mask_rate=0.15):
     return tester
 
 if __name__ == '__main__':
-    SRC = 'intake/berte_pretrain'
-    DST = 'intake2/berte_pretrain'
+    SRC = 'intake0/berte_pretrain'
+    DST = 'intake/berte_pretrain'
     TMP_DIR = 'transfer_tmp'
 
     os.makedirs(TMP_DIR, exist_ok=True)

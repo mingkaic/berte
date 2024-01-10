@@ -10,7 +10,7 @@ import common.training as training
 import transfer
 
 if __name__ == '__main__':
-    MODEL = 'intake2/berte_pretrain'
+    MODEL = 'intake/berte_pretrain'
     TMP_DIR = 'transfer_tmp'
 
     os.makedirs(TMP_DIR, exist_ok=True)

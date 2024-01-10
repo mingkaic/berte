@@ -33,5 +33,4 @@ if __name__ == '__main__':
                     ckpt_id=MODEL_ID,
                     model_id=MODEL_ID,
                     training_preprocessing=shorten_ds)
-
     shutil.rmtree(OUTDIR) # remove checkpoints
