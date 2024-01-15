@@ -16,8 +16,6 @@ import export.model3 as model
 import export.training2 as local_training
 from export.training import NAN_LOSS_ERR_CODE
 
-from pass_dataset_builder import Builder as PassBuilder
-
 def epoch_pretrainer_init_builder():
     """ create Builder for EpochPretrainer init """
     return Builder(['training_dataset', 'training_loss', 'training'])
@@ -68,7 +66,7 @@ class PretrainerPipeline:
 
         with open(dataset_config) as file:
             _args = yaml.safe_load(file.read())
-            self.builder = PassBuilder() # tfds.builder(_args['tfds_name'])
+            self.builder = tfds.builder(_args['tfds_name'])
             self.dataset_args = _args['args']
             self.training_settings = _args['settings']
 
