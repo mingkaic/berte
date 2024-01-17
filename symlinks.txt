@@ -36,6 +36,7 @@ v5.1/export/raw_wiki_dataset v5.1/intake/raw_wiki_dataset
 v5.1/export/training.py v5.1/intake/training.py
 v5.2/common common
 v5.2/intake0 v5.1/export
+v5.2/intake/tfds_pass_0 v5.2/intake1/tfds_pass_0
 v5.2/export/model.py v5.2/intake0/model.py
 v5.2/export/model2.py v5.2/intake0/model2.py
 v5.2/export/training.py v5.2/intake0/training.py

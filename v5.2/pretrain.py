@@ -51,7 +51,7 @@ class EpochPretrainer:
 
 class PretrainerPipeline:
     """ pretrainer pipeline """
-    def __init__(self, logger, outdir, dataset_config="configs/dataset.yaml"):
+    def __init__(self, shard_index, logger, outdir, dataset_config="configs/dataset.yaml"):
 
         self.logger = logger
         self.outdir = outdir
@@ -66,8 +66,8 @@ class PretrainerPipeline:
 
         with open(dataset_config) as file:
             _args = yaml.safe_load(file.read())
-            dataset_path = 'tfds_{}_{}'.format(_args['tfds_name'], _args['tfds_shard'])
-            self.builder = tf.data.Dataset.load(dataset_path)
+            self.dataset_path = os.path.join('intake',
+                                        'tfds_{}_{}'.format(_args['tfds_name'], shard_index))
             self.dataset_args = _args['args']
             self.training_settings = _args['settings']
 
@@ -110,10 +110,8 @@ class PretrainerPipeline:
         ])
 
         # dataset
-        self.builder.download_and_prepare()
-        ds = (self.builder.as_dataset()['train']
+        ds = (tf.data.Dataset.load(self.dataset_path)
                 .cache()
-                .map(lambda row: transform(row['image']))
                 .shuffle(self.dataset_args['buffer_size'])
                 .batch(self.dataset_args['batch_size'])
                 .prefetch(tf.data.AUTOTUNE))
@@ -169,4 +167,3 @@ class PretrainerPipeline:
         print('saving model')
         unet.save(os.path.join(self.outdir, model_id))
         return unet
-

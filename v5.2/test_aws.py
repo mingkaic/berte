@@ -4,6 +4,7 @@ This runs pretrain_unetprepare on the aws machine on test mode.
 No metric reporting.
 """
 # standard packages
+import argparse
 import logging
 import os
 
@@ -42,13 +43,20 @@ def shorten_ds(training_ds):
     return training_ds.take(36)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+                    prog='test_aws',
+                    description='split dataset specified by configs into different shards')
+    parser.add_argument('--shard_index', dest='shard_index', default=0)
+
+    args = parser.parse_args()
+
     if not os.path.exists(OUTDIR):
         os.makedirs(OUTDIR)
 
     logger = init.create_logger(ID, CLOUDWATCH_GROUP, EC2_REGION)
     logger.setLevel(logging.INFO)
 
-    PretrainerPipeline(logger, OUTDIR)\
+    PretrainerPipeline(args.shard_index, logger, OUTDIR)\
             .e2e(in_model_dir=IN_MODEL_DIR,
                  ckpt_id=MODEL_ID,
                  model_id=MODEL_ID,
