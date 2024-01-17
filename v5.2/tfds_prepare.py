@@ -1,4 +1,5 @@
 # standard packages
+import os
 import math
 import yaml
 
@@ -7,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-def main(dataset_config="configs/dataset.yaml", nshards=24):
+def main(dataset_config="configs/dataset.yaml", nshards=24, shard_index=-1, output_dir='intake1'):
 
     # prepare builder
     with open(dataset_config) as file:
@@ -33,11 +34,19 @@ def main(dataset_config="configs/dataset.yaml", nshards=24):
             .prefetch(tf.data.AUTOTUNE))
     n = ds.cardinality().numpy()
 
-    # number of shards
+    # save shards
     shard_size = math.ceil(n / nshards)
-    for i in range(n):
+    if shard_index < 0:
+        indices = range(nshards)
+    else:
+        indices = [shard_index]
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+    for i in indices:
         print('saving shard {}'.format(i))
-        tf.data.experimental.save(ds.skip(i * shard_size), 'intake/tfds_{}_{}'.format(ds_name, i))
+        ds.skip(i * shard_size).\
+                take(shard_size).\
+                save(os.path.join(output_dir, 'tfds_{}_{}'.format(ds_name, i)))
         print('done saving shard {}'.format(i))
 
 if __name__ == '__main__':

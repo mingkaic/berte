@@ -66,7 +66,8 @@ class PretrainerPipeline:
 
         with open(dataset_config) as file:
             _args = yaml.safe_load(file.read())
-            self.builder = tfds.builder(_args['tfds_name'])
+            dataset_path = 'tfds_{}_{}'.format(_args['tfds_name'], _args['tfds_shard'])
+            self.builder = tf.data.Dataset.load(dataset_path)
             self.dataset_args = _args['args']
             self.training_settings = _args['settings']
 
