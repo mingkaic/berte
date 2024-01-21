@@ -15,14 +15,14 @@ def main():
                     prog='tfds_prepare',
                     description='split dataset specified by configs into different shards')
     parser.add_argument('--config', dest='config', default='configs/dataset.yaml')
-    parser.add_argument('--nshards', dest='nshards', default=24)
-    parser.add_argument('--shard_index', dest='shard_index', default=-1)
+    parser.add_argument('--nshards', dest='nshards', default=48, type=int)
+    parser.add_argument('--shard_index', dest='shard_index', default=-1, type=int)
     parser.add_argument('--output_dir', dest='output_dir', default='intake1')
 
     args = parser.parse_args()
 
     # prepare builder
-    with open(args.dataset_config) as file:
+    with open(args.config) as file:
         _args = yaml.safe_load(file.read())
         ds_name = _args['tfds_name']
         builder = tfds.builder(ds_name)
@@ -54,7 +54,7 @@ def main():
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
     for i in indices:
-        print('saving shard {}'.format(i))
+        print('saving shard {}: size={}'.format(i, shard_size))
         ds.skip(i * shard_size).\
                 take(shard_size).\
                 save(os.path.join(args.output_dir, 'tfds_{}_{}'.format(ds_name, i)))

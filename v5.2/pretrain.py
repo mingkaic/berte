@@ -5,7 +5,6 @@ import time
 
 # installed packages
 import tensorflow as tf
-import tensorflow_datasets as tfds
 
 # local packages
 import common.training as training
